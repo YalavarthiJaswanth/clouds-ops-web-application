@@ -134,6 +134,35 @@
   }
 
   async function restoreSession() {
+    // 0. Parse OAuth callback handoff token from URL hash (#auth_token=...)
+    try {
+      const hash = window.location.hash || '';
+      if (hash.includes('auth_token=')) {
+        const tokenMatch = hash.match(/auth_token=([^&]+)/);
+        if (tokenMatch && tokenMatch[1]) {
+          const rawToken = decodeURIComponent(tokenMatch[1]);
+          state.token = rawToken;
+          localStorage.setItem('cloudops_token', rawToken);
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, document.title, window.location.pathname + window.location.search);
+          }
+          notify('Google authentication successful! Session restored.', 'success');
+        }
+      }
+
+      // Check for OAuth error query param (?auth_error=...)
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.has('auth_error')) {
+        const err = urlParams.get('auth_error');
+        notify(`Google authentication failed: ${err}`, 'error');
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, document.title, window.location.pathname);
+        }
+      }
+    } catch (e) {
+      console.warn('[CloudOps] OAuth URL parse error:', e.message);
+    }
+
     // 1. Fetch auth config (Google Client ID & TTL)
     try {
       const config = await api('/api/auth/config');
@@ -871,6 +900,12 @@
   async function triggerDeployment() {
     if (state.isDeploying) return;
 
+    if (!state.token) {
+      notify('Please sign in to deploy a testing environment.', 'error');
+      openAuthModal('login');
+      return;
+    }
+
     if (!state.selectedFile) {
       notify('Please select an application ZIP archive first.', 'error');
       return;
@@ -1003,8 +1038,12 @@
 
       // Step 6: Ready
       updateStepper(6, 'completed');
-      const publicUrl = finalDeployment?.publicUrl || (finalDeployment?.publicIp ? `http://${finalDeployment.publicIp}:${appPort}` : `http://localhost:${appPort}`);
-      appendTerminalLog(`Testing environment ready! Live URL: ${publicUrl}`);
+      const publicUrl = finalDeployment?.publicUrl || (finalDeployment?.publicIp ? `http://${finalDeployment.publicIp}:${appPort}` : null);
+      if (publicUrl) {
+        appendTerminalLog(`Testing environment ready! Live URL: ${publicUrl}`);
+      } else {
+        appendTerminalLog(`Container active on EC2 (${instanceId}), but public URL is pending or unavailable.`);
+      }
 
       // Display Result Box
       if (resultBox) {
@@ -1012,18 +1051,29 @@
         const urlLink = document.getElementById('deploy-result-url');
         const appNameTitle = document.getElementById('deploy-result-app-name');
         if (urlLink) {
-          urlLink.href = publicUrl;
-          urlLink.textContent = publicUrl;
+          if (publicUrl) {
+            urlLink.href = publicUrl;
+            urlLink.textContent = publicUrl;
+            urlLink.style.color = 'var(--text-code)';
+          } else {
+            urlLink.href = '#';
+            urlLink.textContent = 'Testing URL unavailable';
+            urlLink.style.color = 'var(--text-muted)';
+          }
         }
         if (appNameTitle) appNameTitle.textContent = `${projectName} (${appPort})`;
 
         const btnOpen = document.getElementById('btn-deploy-open-url');
         const btnCopy = document.getElementById('btn-deploy-copy-url');
-        if (btnOpen) btnOpen.onclick = () => window.open(publicUrl, '_blank');
+        if (btnOpen) {
+          btnOpen.disabled = !publicUrl;
+          btnOpen.onclick = publicUrl ? () => window.open(publicUrl, '_blank') : null;
+        }
         if (btnCopy) {
-          btnCopy.onclick = () => {
+          btnCopy.disabled = !publicUrl;
+          btnCopy.onclick = publicUrl ? () => {
             navigator.clipboard.writeText(publicUrl).then(() => notify('Testing URL copied to clipboard!', 'success'));
-          };
+          } : null;
         }
       }
 
@@ -1127,8 +1177,87 @@
     }
   }
 
+  let dockerPairingInterval = null;
+
   function closeModals() {
+    if (dockerPairingInterval) {
+      clearInterval(dockerPairingInterval);
+      dockerPairingInterval = null;
+    }
     document.querySelectorAll('.modal-backdrop').forEach(el => el.classList.add('hidden'));
+  }
+
+  async function openDockerPairingModal() {
+    if (!state.token) {
+      notify('Please sign in to generate a Docker Agent pairing code.', 'info');
+      openAuthModal('login');
+      return;
+    }
+
+    const modal = document.getElementById('modal-docker-agent');
+    if (modal) modal.classList.remove('hidden');
+
+    const pairingPre = document.getElementById('docker-pairing-cmd');
+    const installPre = document.getElementById('docker-install-cmd');
+    const statusPill = document.getElementById('modal-docker-status-pill');
+    const statusText = document.getElementById('modal-docker-status-text');
+
+    const serverUrl = window.location.origin;
+    if (installPre) {
+      installPre.textContent = `curl -sSL ${serverUrl}/agent/install.sh | bash`;
+    }
+    if (pairingPre) {
+      pairingPre.textContent = 'Generating single-use pairing code...';
+    }
+    if (statusPill) {
+      statusPill.className = 'status-pill pill-stopped';
+      statusPill.textContent = '○ Generating code...';
+    }
+
+    try {
+      const res = await api('/api/agent/pair/request', { method: 'POST' });
+      const code = res.code;
+      const targetServer = res.serverUrl || serverUrl;
+      const connectCmd = `cloudops-agent connect --code ${code} --server ${targetServer}`;
+      if (pairingPre) pairingPre.textContent = connectCmd;
+
+      if (statusPill) {
+        statusPill.className = 'status-pill pill-stopped';
+        statusPill.textContent = '○ Waiting for agent';
+      }
+      if (statusText) {
+        statusText.textContent = `Pairing code ${code} active (10m TTL). Run command in terminal.`;
+      }
+
+      // Start polling
+      if (dockerPairingInterval) clearInterval(dockerPairingInterval);
+      dockerPairingInterval = setInterval(async () => {
+        try {
+          const st = await api('/api/agent/status');
+          if (st.connected) {
+            clearInterval(dockerPairingInterval);
+            dockerPairingInterval = null;
+            if (statusPill) {
+              statusPill.className = 'status-pill pill-running';
+              statusPill.textContent = '● Docker Agent Connected!';
+            }
+            if (statusText) {
+              statusText.textContent = `Host: ${st.machineInfo?.hostname || 'Machine'} (${st.machineInfo?.os || ''})`;
+            }
+            notify('Docker Agent paired and online!', 'success');
+            await refreshDockerStatus();
+          }
+        } catch {}
+      }, 2500);
+
+    } catch (err) {
+      if (pairingPre) pairingPre.textContent = `Error: ${err.message}`;
+      if (statusPill) {
+        statusPill.className = 'status-pill pill-stopped';
+        statusPill.textContent = '✕ Error';
+      }
+      if (statusText) statusText.textContent = err.message;
+    }
   }
 
   async function openLogsModal(projectId = state.activeProjectId) {
@@ -1348,10 +1477,7 @@
       const m = document.getElementById('modal-aws-credentials');
       if (m) m.classList.remove('hidden');
     });
-    if (btnPairDocker) btnPairDocker.addEventListener('click', () => {
-      const m = document.getElementById('modal-docker-agent');
-      if (m) m.classList.remove('hidden');
-    });
+    if (btnPairDocker) btnPairDocker.addEventListener('click', openDockerPairingModal);
 
     // Connections View Buttons
     const btnOpenAWSModal = document.getElementById('btn-open-aws-modal');
@@ -1375,10 +1501,7 @@
       });
     }
 
-    if (btnOpenDockerModal) btnOpenDockerModal.addEventListener('click', () => {
-      const m = document.getElementById('modal-docker-agent');
-      if (m) m.classList.remove('hidden');
-    });
+    if (btnOpenDockerModal) btnOpenDockerModal.addEventListener('click', openDockerPairingModal);
     if (btnTestDocker) {
       btnTestDocker.addEventListener('click', async () => {
         notify('Probing Docker Engine...', 'info');
@@ -1415,13 +1538,26 @@
       });
     });
 
-    // Copy Docker Command
+    // Copy Docker Commands
+    const btnCopyInstall = document.getElementById('btn-copy-docker-install-cmd');
+    if (btnCopyInstall) {
+      btnCopyInstall.addEventListener('click', () => {
+        const cmd = document.getElementById('docker-install-cmd')?.textContent;
+        if (cmd) navigator.clipboard.writeText(cmd).then(() => notify('Install command copied!', 'success'));
+      });
+    }
+
     const btnCopyDocker = document.getElementById('btn-copy-docker-cmd');
     if (btnCopyDocker) {
       btnCopyDocker.addEventListener('click', () => {
         const cmd = document.getElementById('docker-pairing-cmd')?.textContent;
         if (cmd) navigator.clipboard.writeText(cmd).then(() => notify('Pairing command copied!', 'success'));
       });
+    }
+
+    const btnDockerRefresh = document.getElementById('btn-docker-refresh-pair');
+    if (btnDockerRefresh) {
+      btnDockerRefresh.addEventListener('click', openDockerPairingModal);
     }
 
     // Copy Modal Logs

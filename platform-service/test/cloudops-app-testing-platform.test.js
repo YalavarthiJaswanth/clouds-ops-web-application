@@ -314,6 +314,106 @@ async function runCloudOpsPlatformTests() {
       assert.strictEqual(meRes.status, 401);
     });
 
+    // 15. Docker Agent Pairing & Heartbeat
+    await test('15. Docker Agent pairing code exchange and heartbeat flow', async () => {
+      // Create fresh user session for agent test
+      const signupRes = await fetch(`${baseUrl}/api/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: `agent_suite_${Date.now()}@example.com`,
+          password: 'Password123!',
+          name: 'Docker Tester'
+        })
+      });
+      const userData = await signupRes.json();
+      const userToken = userData.token;
+
+      // 1. Request pairing code
+      const pairReq = await fetch(`${baseUrl}/api/agent/pair/request`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${userToken}` }
+      });
+      assert.strictEqual(pairReq.status, 201);
+      const pairData = await pairReq.json();
+      assert.ok(pairData.code);
+      assert.ok(pairData.code.startsWith('PAIR-'));
+
+      // 2. CLI exchanges code
+      const exchangeRes = await fetch(`${baseUrl}/api/agent/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: pairData.code,
+          hostname: 'macbook-dev.local',
+          os: 'darwin',
+          dockerVersion: '26.1.1',
+          dockerAvailable: true
+        })
+      });
+      assert.strictEqual(exchangeRes.status, 200);
+      const exchangeData = await exchangeRes.json();
+      assert.ok(exchangeData.agentId);
+      assert.ok(exchangeData.agentToken);
+
+      // 3. CLI sends heartbeat
+      const hbRes = await fetch(`${baseUrl}/api/agent/heartbeat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${exchangeData.agentToken}`
+        },
+        body: JSON.stringify({
+          agentId: exchangeData.agentId,
+          status: 'IDLE'
+        })
+      });
+      assert.strictEqual(hbRes.status, 200);
+
+      // 4. User queries agent status
+      const statusRes = await fetch(`${baseUrl}/api/agent/status`, {
+        headers: { 'Authorization': `Bearer ${userToken}` }
+      });
+      assert.strictEqual(statusRes.status, 200);
+      const statusData = await statusRes.json();
+      assert.strictEqual(statusData.connected, true);
+      assert.strictEqual(statusData.status, 'ONLINE');
+      assert.strictEqual(statusData.agentId, exchangeData.agentId);
+    });
+
+    // 16. AWS Status and EC2 Discovery
+    await test('16. GET /api/aws/status and /api/aws/ec2 discover tenant infrastructure', async () => {
+      const signupRes = await fetch(`${baseUrl}/api/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: `aws_suite_${Date.now()}@example.com`,
+          password: 'Password123!',
+          name: 'AWS Tester'
+        })
+      });
+      const userData = await signupRes.json();
+      const userToken = userData.token;
+
+      const statusRes = await fetch(`${baseUrl}/api/aws/status`, {
+        headers: { 'Authorization': `Bearer ${userToken}` }
+      });
+      assert.strictEqual(statusRes.status, 200);
+      const statusData = await statusRes.json();
+      assert.strictEqual(statusData.connected, true);
+      assert.strictEqual(statusData.accountId, '979214968440');
+      assert.strictEqual(statusData.region, 'ap-south-1');
+
+      const ec2Res = await fetch(`${baseUrl}/api/aws/ec2`, {
+        headers: { 'Authorization': `Bearer ${userToken}` }
+      });
+      assert.strictEqual(ec2Res.status, 200);
+      const ec2Data = await ec2Res.json();
+      assert.strictEqual(ec2Data.connected, true);
+      assert.ok(Array.isArray(ec2Data.instances));
+      assert.ok(ec2Data.instances.some(i => i.instanceId === 'i-0874001b523dee3c4'));
+    });
+
   } finally {
     server.close();
   }

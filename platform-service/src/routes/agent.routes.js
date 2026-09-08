@@ -6,6 +6,7 @@ const router = express.Router();
 
 // Agent CLI pairing exchange & heartbeat (Public/Agent authenticated)
 router.post('/pair/exchange', (req, res, next) => agentController.exchangePairing(req, res, next));
+router.post('/pair', (req, res, next) => agentController.exchangePairing(req, res, next));
 router.post('/heartbeat', (req, res, next) => agentController.heartbeat(req, res, next));
 
 // Tenant-authenticated Agent controls

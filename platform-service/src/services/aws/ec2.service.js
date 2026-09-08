@@ -141,9 +141,51 @@ class EC2Service {
   }
 
   /**
-   * Discovers any existing running CloudOps EC2 instance
+   * Starts a stopped EC2 instance and waits until it reaches 'running' with a public IP
    */
-  async findRunningCloudOpsInstance(region = config.aws.region, clientOverride = null) {
+  async startInstance(instanceId, region = config.aws.region, clientOverride = null, onLog = null) {
+    const log = (msg) => { if (typeof onLog === 'function') onLog(msg); };
+    const ec2 = (clientOverride || awsClient).getEC2Client(region);
+    const { StartInstancesCommand, waitUntilInstanceRunning } = getEC2();
+
+    log(`[EC2] Sending StartInstances command for instance '${instanceId}' in region '${region}'...`);
+    await ec2.send(new StartInstancesCommand({ InstanceIds: [instanceId] }));
+
+    log(`[EC2] Waiting for instance '${instanceId}' to reach 'running' state (max 120s)...`);
+    try {
+      await waitUntilInstanceRunning({ client: ec2, maxWaitTime: 120 }, { InstanceIds: [instanceId] });
+    } catch {
+      // Fallback poll
+      const maxWaitMs = 120000;
+      const start = Date.now();
+      while (Date.now() - start < maxWaitMs) {
+        await new Promise(r => setTimeout(r, 4000));
+        const inst = await this.validateExistingInstance(instanceId, region, clientOverride).catch(() => null);
+        if (inst && inst.state === 'running' && inst.publicIp) break;
+      }
+    }
+
+    log(`[EC2] Retrieving fresh public IP and network details for instance '${instanceId}'...`);
+    const details = await this.validateExistingInstance(instanceId, region, clientOverride);
+    log(`[EC2] Instance '${instanceId}' is now RUNNING with Public IP: ${details.publicIp || 'pending'}`);
+    return details;
+  }
+
+  /**
+   * Stops an EC2 instance
+   */
+  async stopInstance(instanceId, region = config.aws.region, clientOverride = null, onLog = null) {
+    const log = (msg) => { if (typeof onLog === 'function') onLog(msg); };
+    const ec2 = (clientOverride || awsClient).getEC2Client(region);
+    const { StopInstancesCommand } = getEC2();
+    log(`[EC2] Stopping EC2 instance '${instanceId}'...`);
+    return await ec2.send(new StopInstancesCommand({ InstanceIds: [instanceId] }));
+  }
+
+  /**
+   * Discovers any existing running or stopped CloudOps EC2 instance
+   */
+  async findRunningCloudOpsInstance(region = config.aws.region, clientOverride = null, onLog = null) {
     const ec2 = (clientOverride || awsClient).getEC2Client(region);
     try {
       const { DescribeInstancesCommand } = getEC2();
@@ -151,15 +193,15 @@ class EC2Service {
       let res = await ec2.send(new DescribeInstancesCommand({
         Filters: [
           { Name: 'tag:ManagedBy', Values: ['CloudOps', 'CloudOpsPlatform', 'cloudops'] },
-          { Name: 'instance-state-name', Values: ['running'] }
+          { Name: 'instance-state-name', Values: ['running', 'stopped'] }
         ]
       })).catch(() => null);
 
       if (!res || !res.Reservations || res.Reservations.length === 0) {
-        // Fallback: discover any running instance in the account
+        // Fallback: discover any running or stopped instance in the account
         res = await ec2.send(new DescribeInstancesCommand({
           Filters: [
-            { Name: 'instance-state-name', Values: ['running'] }
+            { Name: 'instance-state-name', Values: ['running', 'stopped'] }
           ]
         })).catch(() => null);
       }
@@ -179,6 +221,9 @@ class EC2Service {
               platform: this.getPlatformForArchitecture(arch),
               availabilityZone: inst.Placement?.AvailabilityZone || null
             };
+          } else if (inst.State?.Name === 'stopped') {
+            // Instance exists and is stopped: boot it up and reuse it
+            return await this.startInstance(inst.InstanceId, region, clientOverride, onLog);
           }
         }
       }
@@ -189,9 +234,9 @@ class EC2Service {
   }
 
   /**
-   * Discovers existing running EC2 instance specifically for the given tenant/project
+   * Discovers existing running or stopped EC2 instance specifically for the given tenant/project
    */
-  async findCompatibleProjectInstance(projectId, organizationId = null, region = config.aws.region, clientOverride = null) {
+  async findCompatibleProjectInstance(projectId, organizationId = null, region = config.aws.region, clientOverride = null, onLog = null) {
     const ec2 = (clientOverride || awsClient).getEC2Client(region);
     try {
       const { DescribeInstancesCommand } = getEC2();
@@ -200,7 +245,7 @@ class EC2Service {
       if (projectId) {
         const projectFilters = [
           { Name: 'tag:ProjectId', Values: [projectId] },
-          { Name: 'instance-state-name', Values: ['running'] }
+          { Name: 'instance-state-name', Values: ['running', 'stopped'] }
         ];
         if (organizationId) {
           projectFilters.push({ Name: 'tag:TenantId', Values: [organizationId] });
@@ -221,17 +266,19 @@ class EC2Service {
                 platform: this.getPlatformForArchitecture(arch),
                 availabilityZone: inst.Placement?.AvailabilityZone || null
               };
+            } else if (inst.State?.Name === 'stopped') {
+              return await this.startInstance(inst.InstanceId, region, clientOverride, onLog);
             }
           }
         }
       }
 
-      // 2. Fallback: discover any running instance owned by this organization/tenant
+      // 2. Fallback: discover any running or stopped instance owned by this organization/tenant
       if (organizationId) {
         const orgRes = await ec2.send(new DescribeInstancesCommand({
           Filters: [
             { Name: 'tag:TenantId', Values: [organizationId] },
-            { Name: 'instance-state-name', Values: ['running'] }
+            { Name: 'instance-state-name', Values: ['running', 'stopped'] }
           ]
         })).catch(() => null);
         for (const resv of (orgRes?.Reservations || [])) {
@@ -249,13 +296,15 @@ class EC2Service {
                 platform: this.getPlatformForArchitecture(arch),
                 availabilityZone: inst.Placement?.AvailabilityZone || null
               };
+            } else if (inst.State?.Name === 'stopped') {
+              return await this.startInstance(inst.InstanceId, region, clientOverride, onLog);
             }
           }
         }
       }
 
-      // 3. Fallback: general running CloudOps instance
-      return await this.findRunningCloudOpsInstance(region, clientOverride);
+      // 3. Fallback: general running or stopped CloudOps instance
+      return await this.findRunningCloudOpsInstance(region, clientOverride, onLog);
     } catch {
       return null;
     }

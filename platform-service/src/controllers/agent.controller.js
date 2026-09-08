@@ -31,9 +31,18 @@ class AgentController {
    */
   async exchangePairing(req, res, next) {
     try {
-      const { code, machineInfo } = req.body;
+      let { code, machineInfo } = req.body;
       if (!code) {
         return res.status(400).json({ error: 'Missing Code', message: 'Pairing code is required' });
+      }
+
+      if (!machineInfo && (req.body.hostname || req.body.dockerVersion)) {
+        machineInfo = {
+          hostname: req.body.hostname,
+          os: req.body.os || process.platform,
+          dockerVersion: req.body.dockerVersion || '24.0.0',
+          dockerAvailable: req.body.dockerAvailable !== false
+        };
       }
 
       const result = agentService.exchangePairingCode({ code, machineInfo });
@@ -49,8 +58,9 @@ class AgentController {
   async heartbeat(req, res, next) {
     try {
       const authHeader = req.headers['authorization'] || '';
-      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-      const { agentId, dockerStatus } = req.body;
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim() || req.body.agentToken;
+      const agentId = req.body.agentId || req.headers['x-agent-id'];
+      const dockerStatus = req.body.dockerStatus || req.body;
 
       if (!agentId || !token) {
         return res.status(401).json({ error: 'Unauthorized', message: 'Agent ID and Bearer Token required' });

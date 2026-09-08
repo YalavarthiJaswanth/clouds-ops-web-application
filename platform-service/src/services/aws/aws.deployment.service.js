@@ -226,13 +226,19 @@ class AWSDeploymentService {
         }
       }
 
-      // 2c. Discover existing compatible running EC2 instance for this tenant/project
+      // 2c. Discover existing compatible running or stopped EC2 instance for this tenant/project
       if (!instanceInfo && !options.forceNewInstance) {
-        const existingCompatible = await ec2Service.findCompatibleProjectInstance(projectId, orgId, region, activeAwsClient);
+        const existingCompatible = await ec2Service.findCompatibleProjectInstance(
+          projectId,
+          orgId,
+          region,
+          activeAwsClient,
+          (msg) => this._addLog(state, 'EC2_REUSE', msg)
+        );
         if (existingCompatible && existingCompatible.state === 'running' && existingCompatible.publicIp) {
           state.status = 'EC2_VALIDATING';
           state.stage = 'EC2_VALIDATING';
-          this._addLog(state, 'EC2_REUSE', `Reusing compatible running EC2 instance '${existingCompatible.instanceId}' (Arch: ${existingCompatible.architecture}, Public IP: ${existingCompatible.publicIp})...`);
+          this._addLog(state, 'EC2_REUSE', `Reusing compatible EC2 instance '${existingCompatible.instanceId}' (Arch: ${existingCompatible.architecture}, Public IP: ${existingCompatible.publicIp})...`);
           const network = await ec2Service.getDefaultVPCAndSubnet(region, activeAwsClient);
           await ec2Service.ensureSecurityGroup(network.vpcId, port, region, { ProjectId: projectId }, activeAwsClient);
           instanceInfo = existingCompatible;

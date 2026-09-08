@@ -108,15 +108,6 @@ class AWSClient {
    */
   async getCallerIdentity(regionOverride) {
     const targetRegion = regionOverride || this.region;
-    if (!this.credentials || !this.credentials.accessKeyId || !this.credentials.secretAccessKey) {
-      return {
-        connected: false,
-        error: 'No AWS credentials configured',
-        code: 'CredentialsMissing',
-        region: targetRegion
-      };
-    }
-
     const sts = this.getSTSClient(targetRegion);
     const { GetCallerIdentityCommand } = require('@aws-sdk/client-sts');
 
