@@ -191,6 +191,40 @@ class SSMService {
   }
 
   /**
+   * Stops a running Docker container on the EC2 instance via SSM Run Command
+   */
+  async stopContainer(instanceId, containerName, region = config.aws.region, clientOverride = null) {
+    if (!instanceId || !containerName) {
+      throw new Error('instanceId and containerName are required to stop container');
+    }
+    const commands = [
+      `docker stop ${containerName} || true`
+    ];
+    return this.executeCommand(instanceId, commands, {
+      region,
+      comment: `Stop container ${containerName}`,
+      awsClient: clientOverride
+    });
+  }
+
+  /**
+   * Restarts a Docker container on the EC2 instance via SSM Run Command
+   */
+  async restartContainer(instanceId, containerName, region = config.aws.region, clientOverride = null) {
+    if (!instanceId || !containerName) {
+      throw new Error('instanceId and containerName are required to restart container');
+    }
+    const commands = [
+      `docker restart ${containerName} || docker start ${containerName}`
+    ];
+    return this.executeCommand(instanceId, commands, {
+      region,
+      comment: `Restart container ${containerName}`,
+      awsClient: clientOverride
+    });
+  }
+
+  /**
    * Directly queries SSM agent information for a specific instance
    */
   async getInstanceInformation(instanceId, region = config.aws.region, clientOverride = null) {

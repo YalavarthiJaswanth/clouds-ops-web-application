@@ -1,3 +1,7 @@
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 const config = require('../../config');
 
 class MongoDBService {
@@ -272,7 +276,11 @@ class MongoDBService {
         createdAt: userData.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      await this.db.collection('users').insertOne(doc);
+      await this.db.collection('users').updateOne(
+        { email: doc.email },
+        { $set: doc },
+        { upsert: true }
+      );
       return this._formatDoc(doc);
     } catch (err) {
       console.error('[MongoDB] createUser error:', err.message);

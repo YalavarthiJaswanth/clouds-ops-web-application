@@ -103,6 +103,8 @@ router.get('/:projectId/aws/status', requireProjectAccess, awsController.getDepl
 router.get('/:projectId/aws/logs', requireProjectAccess, awsController.getDeploymentLogs);
 router.get('/:projectId/aws/resources', requireProjectAccess, awsController.getDeploymentResources);
 router.post('/:projectId/aws/rollback', requireProjectAccess, awsController.rollbackDeployment);
+router.post('/:projectId/aws/stop', requireProjectAccess, awsController.stopDeployment);
+router.post('/:projectId/aws/restart', requireProjectAccess, awsController.restartDeployment);
 router.delete('/:projectId/aws/deployment', requireProjectAccess, awsController.deleteDeployment);
 
 // Phase 7: Real-Time Monitoring & Observability Engine Routes

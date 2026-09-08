@@ -1,15 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CloudOps — Autonomous Multi-Tenant Cloud DevOps SaaS Platform</title>
+  <title>CloudOps — Cloud-Based Application Testing & Deployment Platform</title>
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
+
 <body class="saas-body">
   <div class="saas-layout">
     <!-- Collapsible Sidebar Navigation -->
@@ -126,7 +130,8 @@
         <div class="topbar-center">
           <div class="global-search-box">
             <span class="search-icon">🔍</span>
-            <input type="text" id="global-search-input" placeholder="Search projects, deployments, resources, audit events..." />
+            <input type="text" id="global-search-input"
+              placeholder="Search projects, deployments, resources, audit events..." />
           </div>
         </div>
 
@@ -161,10 +166,12 @@
           <div class="view-header">
             <div>
               <h3>Autonomous CloudOps Dashboard</h3>
-              <p class="section-desc">Real-time status of multi-tenant infrastructure, active deployments, and automated self-healing loops.</p>
+              <p class="section-desc">Real-time status of multi-tenant infrastructure, active deployments, and automated
+                self-healing loops.</p>
             </div>
             <div class="header-actions">
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-overview">🔄 Refresh Overview</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-overview">🔄 Refresh
+                Overview</button>
             </div>
           </div>
 
@@ -228,7 +235,8 @@
                     </tr>
                     <tr>
                       <td>Public Endpoint</td>
-                      <td><a href="javascript:void(0)" target="_blank" class="live-url-link" id="overview-endpoint-link" style="color: var(--text-muted);">None</a></td>
+                      <td><a href="javascript:void(0)" target="_blank" class="live-url-link" id="overview-endpoint-link"
+                          style="color: var(--text-muted);">None</a></td>
                     </tr>
                     <tr>
                       <td>Health Status</td>
@@ -245,11 +253,15 @@
                 <span class="status-badge badge-success">PROTECTION ARMED</span>
               </div>
               <div class="status-callout callout-info">
-                <p><strong>Safe Automated Recovery Loop:</strong> Synthetic health probes execute every 15s. Automatic container restarts trigger with exponential backoff on crashloop. Zero destructive changes without explicit approval.</p>
+                <p><strong>Safe Automated Recovery Loop:</strong> Synthetic health probes execute every 15s. Automatic
+                  container restarts trigger with exponential backoff on crashloop. Zero destructive changes without
+                  explicit approval.</p>
               </div>
               <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
-                <button type="button" class="btn btn-secondary btn-sm" onclick="App.navigateTo('self-healing')">View Incident Log</button>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="App.navigateTo('observability')">Open Metrics</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="App.navigateTo('self-healing')">View
+                  Incident Log</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="App.navigateTo('observability')">Open
+                  Metrics</button>
               </div>
             </div>
           </div>
@@ -290,7 +302,8 @@
               <p class="section-desc">Projects analyzed, containerized, and managed within your isolated workspace.</p>
             </div>
             <div class="header-actions">
-              <button type="button" class="btn btn-primary btn-sm" onclick="App.navigateTo('upload')">📦 Upload New Project</button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="App.navigateTo('upload')">📦 Upload New
+                Project</button>
               <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-projects">🔄 Refresh</button>
             </div>
           </div>
@@ -300,7 +313,8 @@
               <span class="empty-icon">📁</span>
               <h4>No projects in this workspace yet</h4>
               <p>Upload your application ZIP to run autonomous analysis and deployment.</p>
-              <button type="button" class="btn btn-primary" onclick="App.navigateTo('upload')">Upload First Application</button>
+              <button type="button" class="btn btn-primary" onclick="App.navigateTo('upload')">Upload First
+                Application</button>
             </div>
           </div>
         </section>
@@ -310,10 +324,12 @@
           <div class="view-header">
             <div>
               <h3>Deployment Pipeline & Orchestration</h3>
-              <p class="section-desc">8-Stage Autonomous Deployment Lifecycle with Real-Time Progress and RCA Diagnostics.</p>
+              <p class="section-desc">8-Stage Autonomous Deployment Lifecycle with Real-Time Progress and RCA
+                Diagnostics.</p>
             </div>
             <div class="header-actions">
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-deployments">🔄 Refresh Status</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-deployments">🔄 Refresh
+                Status</button>
             </div>
           </div>
 
@@ -324,7 +340,7 @@
               <span class="status-badge badge-info" id="pipeline-overall-status">IDLE / READY</span>
             </div>
 
-            <div class="pipeline-stepper" id="pipeline-stepper-container">
+            <div class="pipeline-stepper deployment-stepper" id="deployment-stepper">
               <div class="step-node completed" id="step-1">
                 <div class="step-circle">1</div>
                 <div class="step-details">
@@ -398,21 +414,29 @@
                 <span style="font-size: 1.5rem;">🟢</span>
                 <div>
                   <h4 style="margin: 0; font-weight: 700; color: #10b981;">CURRENT LIVE APPLICATION</h4>
-                  <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted);">Active verified production deployment running on AWS cloud infrastructure</p>
+                  <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted);">Active verified production
+                    deployment running on AWS cloud infrastructure</p>
                 </div>
               </div>
               <span class="status-badge badge-success" id="live-app-status-badge">LIVE &amp; HEALTHY</span>
             </div>
 
             <div id="live-app-details-container" style="margin-top: 1rem;">
-              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 1rem 1.25rem;">
+              <div
+                style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 1rem 1.25rem;">
                 <div>
-                  <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; display: block;">Production Live URL:</span>
-                  <a href="javascript:void(0)" target="_blank" class="live-url-highlight" id="live-app-url-link" style="font-size: 1.25rem; font-weight: 700; color: #10b981; text-decoration: none;">http://15.206.74.0:3000</a>
+                  <span
+                    style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; display: block;">Production
+                    Live URL:</span>
+                  <a href="javascript:void(0)" target="_blank" class="live-url-highlight" id="live-app-url-link"
+                    style="font-size: 1.25rem; font-weight: 700; color: #10b981; text-decoration: none;">http://15.206.74.0:3000</a>
                 </div>
                 <div style="display: flex; gap: 0.5rem;">
-                  <a id="btn-live-app-open" href="javascript:void(0)" target="_blank" class="btn btn-primary btn-sm">🌐 OPEN APPLICATION</a>
-                  <button type="button" class="btn btn-secondary btn-sm" id="btn-live-app-copy" onclick="navigator.clipboard.writeText(document.getElementById('live-app-url-link').href || ''); alert('Live URL copied to clipboard!');">📋 Copy URL</button>
+                  <a id="btn-live-app-open" href="javascript:void(0)" target="_blank" class="btn btn-primary btn-sm">🌐
+                    OPEN APPLICATION</a>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-live-app-copy"
+                    onclick="navigator.clipboard.writeText(document.getElementById('live-app-url-link').href || ''); alert('Live URL copied to clipboard!');">📋
+                    Copy URL</button>
                 </div>
               </div>
 
@@ -429,23 +453,28 @@
                       <td>Target Architecture</td>
                       <td><span class="status-badge badge-info" id="live-app-arch">x86_64 / linux/amd64</span></td>
                       <td>Health Status</td>
-                      <td><span class="status-badge badge-success" id="live-app-health-probe">HTTP 200 OK (Probed)</span></td>
+                      <td><span class="status-badge badge-success" id="live-app-health-probe">HTTP 200 OK
+                          (Probed)</span></td>
                     </tr>
                     <tr>
                       <td>Docker Image Tag</td>
-                      <td><code class="code-pill" id="live-app-image-tag">cloudops/cloudops-demo-app:build-cloudops</code></td>
+                      <td><code class="code-pill"
+                          id="live-app-image-tag">cloudops/cloudops-demo-app:build-cloudops</code></td>
                       <td>ECR Digest</td>
-                      <td><code class="code-pill" id="live-app-digest" style="font-size: 0.75rem;">sha256:74e3b9d30cc4...</code></td>
+                      <td><code class="code-pill" id="live-app-digest"
+                          style="font-size: 0.75rem;">sha256:74e3b9d30cc4...</code></td>
                     </tr>
                   </tbody>
                 </table>
               </div>
             </div>
 
-            <div id="live-app-empty-placeholder" class="hidden" style="padding: 1.5rem; text-align: center; color: var(--text-muted);">
+            <div id="live-app-empty-placeholder" class="hidden"
+              style="padding: 1.5rem; text-align: center; color: var(--text-muted);">
               <span style="font-size: 2rem; display: block; margin-bottom: 0.5rem;">☁️</span>
               <p style="margin: 0; font-weight: 500;">No live deployment verified yet for this project.</p>
-              <p style="font-size: 0.8rem; margin-top: 0.25rem;">Deploy your application using the pipeline below to establish live production infrastructure.</p>
+              <p style="font-size: 0.8rem; margin-top: 0.25rem;">Deploy your application using the pipeline below to
+                establish live production infrastructure.</p>
             </div>
           </div>
 
@@ -457,9 +486,11 @@
               <p id="banner-deployment-desc">Your workload is running autonomously on verified cloud infrastructure.</p>
               <div class="banner-url-box">
                 <span>Endpoint:</span>
-                <a href="javascript:void(0)" target="_blank" class="live-url-highlight" id="deployment-live-url">Pending deployment...</a>
+                <a href="javascript:void(0)" target="_blank" class="live-url-highlight" id="deployment-live-url">Pending
+                  deployment...</a>
                 <span class="status-badge badge-success" id="deployment-live-badge">PROBED</span>
-                <a id="btn-open-live-app" href="javascript:void(0)" target="_blank" class="btn btn-primary btn-xs" style="margin-left: 0.75rem;">🌐 OPEN APPLICATION</a>
+                <a id="btn-open-live-app" href="javascript:void(0)" target="_blank" class="btn btn-primary btn-xs"
+                  style="margin-left: 0.75rem;">🌐 OPEN APPLICATION</a>
               </div>
             </div>
           </div>
@@ -471,7 +502,8 @@
               <span class="status-badge badge-success" id="rca-status-badge">OPTIMAL — NO FAILURES</span>
             </div>
             <div id="rca-content-box">
-              <p class="text-muted">No active failures detected. All 8 pipeline stages executed successfully with cryptographic verification.</p>
+              <p class="text-muted">No active failures detected. All 8 pipeline stages executed successfully with
+                cryptographic verification.</p>
             </div>
           </div>
 
@@ -495,7 +527,8 @@
                 </thead>
                 <tbody id="deployment-history-tbody">
                   <tr>
-                    <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No deployment records found for this project.</td>
+                    <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No deployment
+                      records found for this project.</td>
                   </tr>
                 </tbody>
               </table>
@@ -508,7 +541,8 @@
               <h4>💻 Orchestration Console Logs</h4>
               <button type="button" class="btn btn-secondary btn-xs" id="btn-clear-logs">Clear</button>
             </div>
-            <pre class="terminal-logs" id="deployment-terminal-logs"><code>[Orchestrator] Ready for deployment execution.</code></pre>
+            <pre class="terminal-logs"
+              id="deployment-terminal-logs"><code>[Orchestrator] Ready for deployment execution.</code></pre>
           </div>
         </section>
 
@@ -517,13 +551,19 @@
           <div class="view-header">
             <div>
               <h3>Upload & Autonomous Ingestion</h3>
-              <p class="section-desc">Drop your source archive. The analyzer inspects language, framework, port, Dockerfile, and generates a tailored deployment plan.</p>
+              <p class="section-desc">Drop your source archive. The analyzer inspects language, framework, port,
+                Dockerfile, and generates a tailored deployment plan.</p>
             </div>
           </div>
 
           <!-- Auth Warning for Unauthenticated Users -->
           <div id="upload-auth-warning" class="status-callout callout-warning hidden" style="margin-bottom: 1.25rem;">
-            <p><strong>🔒 Authentication Required:</strong> You are browsing as a guest. Please <a href="javascript:void(0)" onclick="App.openModal('modal-login')" style="color: #818cf8; text-decoration: underline; font-weight: 600;">Sign In</a> or <a href="javascript:void(0)" onclick="App.openModal('modal-signup')" style="color: #818cf8; text-decoration: underline; font-weight: 600;">Create an Organization</a> to upload applications to your isolated workspace.</p>
+            <p><strong>🔒 Authentication Required:</strong> You are browsing as a guest. Please <a
+                href="javascript:void(0)" onclick="App.openModal('modal-login')"
+                style="color: #818cf8; text-decoration: underline; font-weight: 600;">Sign In</a> or <a
+                href="javascript:void(0)" onclick="App.openModal('modal-signup')"
+                style="color: #818cf8; text-decoration: underline; font-weight: 600;">Create an Organization</a> to
+              upload applications to your isolated workspace.</p>
           </div>
 
           <!-- Upload Dropzone -->
@@ -532,7 +572,8 @@
             <div class="dropzone-inner" id="dropzone-area">
               <div class="dropzone-icon">📥</div>
               <h4>Drag & drop your application ZIP here</h4>
-              <p id="upload-limit-text">Supports Node.js, Express, Fastify, Python, Go, Dockerized projects (Max 1024MB / 1GB)</p>
+              <p id="upload-limit-text">Supports Node.js, Express, Fastify, Python, Go, Dockerized projects (Max 1024MB
+                / 1GB)</p>
               <button type="button" class="btn btn-primary" id="btn-browse-file">Browse Computer</button>
             </div>
 
@@ -570,13 +611,15 @@
             <!-- "Ask Only When Required" Requirements Section -->
             <div id="reqs-prompt-section" class="reqs-prompt-section hidden" style="margin-top: 1.5rem;">
               <div class="status-callout callout-warning">
-                <p><strong>Configuration Action Required:</strong> The application requires the following inputs before deployment:</p>
+                <p><strong>Configuration Action Required:</strong> The application requires the following inputs before
+                  deployment:</p>
               </div>
               <div id="dynamic-reqs-inputs" style="margin-top: 1rem;"></div>
             </div>
 
             <div class="form-actions" style="margin-top: 1.5rem; justify-content: flex-end;">
-              <button type="button" class="btn btn-primary btn-lg" id="btn-proceed-deploy">⚡ Approve & Execute Deployment</button>
+              <button type="button" class="btn btn-primary btn-lg" id="btn-proceed-deploy">⚡ Approve & Execute
+                Deployment</button>
             </div>
           </div>
         </section>
@@ -586,10 +629,12 @@
           <div class="view-header">
             <div>
               <h3>Cloud Infrastructure (AWS)</h3>
-              <p class="section-desc">Real-time compute instances, container registries, and networking resources in your cloud account.</p>
+              <p class="section-desc">Real-time compute instances, container registries, and networking resources in
+                your cloud account.</p>
             </div>
             <div class="header-actions">
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-infra">🔄 Refresh Resources</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-infra">🔄 Refresh
+                Resources</button>
             </div>
           </div>
 
@@ -607,7 +652,8 @@
                 </thead>
                 <tbody id="infra-ec2-table">
                   <tr>
-                    <td colspan="4" style="text-align:center; color: var(--text-muted); padding: 2rem;">No EC2 compute instances provisioned for this tenant. Deploy a project to launch infrastructure.</td>
+                    <td colspan="4" style="text-align:center; color: var(--text-muted); padding: 2rem;">No EC2 compute
+                      instances provisioned for this tenant. Deploy a project to launch infrastructure.</td>
                   </tr>
                 </tbody>
               </table>
@@ -625,7 +671,8 @@
                 </thead>
                 <tbody id="infra-ecr-table">
                   <tr>
-                    <td colspan="3" style="text-align:center; color: var(--text-muted); padding: 2rem;">No ECR container repositories registered for this tenant.</td>
+                    <td colspan="3" style="text-align:center; color: var(--text-muted); padding: 2rem;">No ECR container
+                      repositories registered for this tenant.</td>
                   </tr>
                 </tbody>
               </table>
@@ -638,7 +685,8 @@
           <div class="view-header">
             <div>
               <h3>Terraform Infrastructure as Code</h3>
-              <p class="section-desc">Tenant-isolated Terraform workspace, HCL generation, state lock, and dry-run execution.</p>
+              <p class="section-desc">Tenant-isolated Terraform workspace, HCL generation, state lock, and dry-run
+                execution.</p>
             </div>
             <div class="header-actions">
               <button type="button" class="btn btn-secondary btn-sm" id="btn-tf-plan">📋 Run Plan</button>
@@ -668,7 +716,8 @@
           <div class="view-header">
             <div>
               <h3>Docker Containerization Engine</h3>
-              <p class="section-desc">Multi-stage Dockerfile generation, layer caching, image registry push, and local daemon status.</p>
+              <p class="section-desc">Multi-stage Dockerfile generation, layer caching, image registry push, and local
+                daemon status.</p>
             </div>
           </div>
 
@@ -696,7 +745,8 @@ CMD ["npm", "start"]</code></pre>
           <div class="view-header">
             <div>
               <h3>CI/CD Pipelines (GitHub & Jenkins)</h3>
-              <p class="section-desc">Source control branch synchronization, declarative Jenkinsfile generation, and build history.</p>
+              <p class="section-desc">Source control branch synchronization, declarative Jenkinsfile generation, and
+                build history.</p>
             </div>
           </div>
 
@@ -752,7 +802,8 @@ CMD ["npm", "start"]</code></pre>
           <div class="view-header">
             <div>
               <h3>Kubernetes Cluster & Workloads</h3>
-              <p class="section-desc">EKS / Kind cluster workloads, DNS-1123 manifest generation, pod replica health, and service discovery.</p>
+              <p class="section-desc">EKS / Kind cluster workloads, DNS-1123 manifest generation, pod replica health,
+                and service discovery.</p>
             </div>
           </div>
 
@@ -770,7 +821,8 @@ CMD ["npm", "start"]</code></pre>
               </thead>
               <tbody id="k8s-pods-table">
                 <tr>
-                  <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No active pods in cluster. Deploy a project to launch Kubernetes workloads.</td>
+                  <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No active pods in
+                    cluster. Deploy a project to launch Kubernetes workloads.</td>
                 </tr>
               </tbody>
             </table>
@@ -782,10 +834,12 @@ CMD ["npm", "start"]</code></pre>
           <div class="view-header">
             <div>
               <h3>Observability & Health Probes</h3>
-              <p class="section-desc">Synthetic health check logs, latency tracking, rolling failure rates, and CloudWatch metrics.</p>
+              <p class="section-desc">Synthetic health check logs, latency tracking, rolling failure rates, and
+                CloudWatch metrics.</p>
             </div>
             <div class="header-actions">
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-trigger-health-probe">🩺 Trigger Probe Now</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-trigger-health-probe">🩺 Trigger Probe
+                Now</button>
             </div>
           </div>
 
@@ -822,10 +876,12 @@ CMD ["npm", "start"]</code></pre>
           <div class="view-header">
             <div>
               <h3>Self-Healing & Incident Remediations</h3>
-              <p class="section-desc">Autonomous failure detection, Root Cause Analysis, safe restart policies, and circuit breaker protection.</p>
+              <p class="section-desc">Autonomous failure detection, Root Cause Analysis, safe restart policies, and
+                circuit breaker protection.</p>
             </div>
             <div class="header-actions">
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-auto-healing">🛡️ Toggle Auto-Remediation</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-auto-healing">🛡️ Toggle
+                Auto-Remediation</button>
             </div>
           </div>
 
@@ -843,7 +899,8 @@ CMD ["npm", "start"]</code></pre>
               </thead>
               <tbody id="incidents-table-body">
                 <tr>
-                  <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No active incidents. Self-healing loop active and monitoring.</td>
+                  <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No active
+                    incidents. Self-healing loop active and monitoring.</td>
                 </tr>
               </tbody>
             </table>
@@ -855,10 +912,12 @@ CMD ["npm", "start"]</code></pre>
           <div class="view-header">
             <div>
               <h3>Provider Connection Center</h3>
-              <p class="section-desc">Tenant-isolated provider credentials stored in AES-256-GCM encrypted vault. Never hard-coded.</p>
+              <p class="section-desc">Tenant-isolated provider credentials stored in AES-256-GCM encrypted vault. Never
+                hard-coded.</p>
             </div>
             <div class="header-actions">
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-connections">🔄 Refresh Status</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-connections">🔄 Refresh
+                Status</button>
             </div>
           </div>
 
@@ -990,7 +1049,8 @@ CMD ["npm", "start"]</code></pre>
           <div class="view-header">
             <div>
               <h3>Security & Compliance Audit Trail</h3>
-              <p class="section-desc">Tenant-scoped event log with cryptographic timestamps, actor attribution, and automatic secret redaction.</p>
+              <p class="section-desc">Tenant-scoped event log with cryptographic timestamps, actor attribution, and
+                automatic secret redaction.</p>
             </div>
             <div class="header-actions">
               <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-audit">🔄 Refresh Logs</button>
@@ -1010,7 +1070,8 @@ CMD ["npm", "start"]</code></pre>
               </thead>
               <tbody id="audit-logs-table-body">
                 <tr>
-                  <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No audit log events recorded yet.</td>
+                  <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No audit log
+                    events recorded yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -1022,7 +1083,8 @@ CMD ["npm", "start"]</code></pre>
           <div class="view-header">
             <div>
               <h3>Organization Settings & Team Members</h3>
-              <p class="section-desc">Manage tenant name, invite developers, configure RBAC roles (OWNER, ADMIN, MEMBER), and security tokens.</p>
+              <p class="section-desc">Manage tenant name, invite developers, configure RBAC roles (OWNER, ADMIN,
+                MEMBER), and security tokens.</p>
             </div>
             <div class="header-actions">
               <button type="button" class="btn btn-primary btn-sm" id="btn-open-invite-modal">➕ Invite Member</button>
@@ -1064,7 +1126,8 @@ CMD ["npm", "start"]</code></pre>
                 </thead>
                 <tbody id="settings-members-table">
                   <tr>
-                    <td colspan="3" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading team members...</td>
+                    <td colspan="3" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading team
+                      members...</td>
                   </tr>
                 </tbody>
               </table>
@@ -1077,7 +1140,8 @@ CMD ["npm", "start"]</code></pre>
 
   <!-- AUTH MODALS -->
   <!-- Login Modal -->
-  <div class="modal-overlay hidden" id="modal-login" role="dialog" aria-modal="true" aria-labelledby="modal-login-title">
+  <div class="modal-overlay hidden" id="modal-login" role="dialog" aria-modal="true"
+    aria-labelledby="modal-login-title">
     <div class="modal-card">
       <div class="modal-header">
         <h3 id="modal-login-title">Login to CloudOps</h3>
@@ -1089,12 +1153,17 @@ CMD ["npm", "start"]</code></pre>
 
       <!-- Real Google OAuth 2.0 / OpenID Connect Button -->
       <div class="google-auth-container">
-        <button type="button" id="btn-google-login" class="btn-google" onclick="App.triggerGoogleLogin()" aria-label="Continue with Google">
+        <button type="button" id="btn-google-login" class="btn-google" onclick="App.triggerGoogleLogin()"
+          aria-label="Continue with Google">
           <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
-            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"/>
-            <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
-            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+            <path fill="#4285F4"
+              d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z" />
+            <path fill="#34A853"
+              d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z" />
+            <path fill="#FBBC05"
+              d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z" />
+            <path fill="#EA4335"
+              d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z" />
           </svg>
           <span id="btn-google-login-text">Continue with Google</span>
         </button>
@@ -1109,13 +1178,17 @@ CMD ["npm", "start"]</code></pre>
       <form id="form-login" class="modal-form" novalidate>
         <div class="form-group">
           <label for="login-email">Email Address</label>
-          <input type="email" id="login-email" required placeholder="developer@cloudops.internal" autocomplete="email" />
+          <input type="email" id="login-email" required placeholder="developer@cloudops.internal"
+            autocomplete="email" />
         </div>
         <div class="form-group">
           <label for="login-password">Password</label>
           <div class="password-input-wrap">
-            <input type="password" id="login-password" required placeholder="••••••••••••" autocomplete="current-password" />
-            <button type="button" class="btn-toggle-password" onclick="App.togglePasswordVisibility('login-password', this)" title="Show or hide password" aria-label="Toggle password visibility">👁️</button>
+            <input type="password" id="login-password" required placeholder="••••••••••••"
+              autocomplete="current-password" />
+            <button type="button" class="btn-toggle-password"
+              onclick="App.togglePasswordVisibility('login-password', this)" title="Show or hide password"
+              aria-label="Toggle password visibility">👁️</button>
           </div>
         </div>
         <div class="form-actions">
@@ -1125,13 +1198,15 @@ CMD ["npm", "start"]</code></pre>
       </form>
 
       <div class="auth-modal-footer">
-        <span>Don't have an account? <a href="javascript:void(0)" onclick="App.switchToSignup()">Sign up and create organization</a></span>
+        <span>Don't have an account? <a href="javascript:void(0)" onclick="App.switchToSignup()">Sign up and create
+            organization</a></span>
       </div>
     </div>
   </div>
 
   <!-- Signup Modal -->
-  <div class="modal-overlay hidden" id="modal-signup" role="dialog" aria-modal="true" aria-labelledby="modal-signup-title">
+  <div class="modal-overlay hidden" id="modal-signup" role="dialog" aria-modal="true"
+    aria-labelledby="modal-signup-title">
     <div class="modal-card">
       <div class="modal-header">
         <h3 id="modal-signup-title">Create New CloudOps Organization</h3>
@@ -1143,12 +1218,17 @@ CMD ["npm", "start"]</code></pre>
 
       <!-- Real Google OAuth 2.0 / OpenID Connect Button -->
       <div class="google-auth-container">
-        <button type="button" id="btn-google-signup" class="btn-google" onclick="App.triggerGoogleLogin()" aria-label="Continue with Google">
+        <button type="button" id="btn-google-signup" class="btn-google" onclick="App.triggerGoogleLogin()"
+          aria-label="Continue with Google">
           <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
-            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"/>
-            <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
-            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+            <path fill="#4285F4"
+              d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z" />
+            <path fill="#34A853"
+              d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z" />
+            <path fill="#FBBC05"
+              d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z" />
+            <path fill="#EA4335"
+              d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z" />
           </svg>
           <span id="btn-google-signup-text">Continue with Google</span>
         </button>
@@ -1176,8 +1256,11 @@ CMD ["npm", "start"]</code></pre>
         <div class="form-group">
           <label for="signup-password">Password (Min 8 characters, uppercase, number & symbol)</label>
           <div class="password-input-wrap">
-            <input type="password" id="signup-password" required placeholder="P@ssw0rd123!" autocomplete="new-password" />
-            <button type="button" class="btn-toggle-password" onclick="App.togglePasswordVisibility('signup-password', this)" title="Show or hide password" aria-label="Toggle password visibility">👁️</button>
+            <input type="password" id="signup-password" required placeholder="P@ssw0rd123!"
+              autocomplete="new-password" />
+            <button type="button" class="btn-toggle-password"
+              onclick="App.togglePasswordVisibility('signup-password', this)" title="Show or hide password"
+              aria-label="Toggle password visibility">👁️</button>
           </div>
         </div>
         <div class="form-actions">
@@ -1187,7 +1270,8 @@ CMD ["npm", "start"]</code></pre>
       </form>
 
       <div class="auth-modal-footer">
-        <span>Already have an account? <a href="javascript:void(0)" onclick="App.switchToLogin()">Log in to existing workspace</a></span>
+        <span>Already have an account? <a href="javascript:void(0)" onclick="App.switchToLogin()">Log in to existing
+            workspace</a></span>
       </div>
     </div>
   </div>
@@ -1247,52 +1331,71 @@ CMD ["npm", "start"]</code></pre>
       </div>
       <div class="modal-body" style="padding: 1rem 0;">
         <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem;">
-          Connect your local laptop's Docker daemon to your CloudOps organization in two simple steps without cloning any repository.
+          Connect your local laptop's Docker daemon to your CloudOps organization in two simple steps without cloning
+          any repository.
         </p>
 
         <!-- OS Selection Header -->
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
-          <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">STEP 1: INSTALL CLOUDOPS AGENT CLI</span>
+          <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">STEP 1: INSTALL CLOUDOPS AGENT
+            CLI</span>
           <div style="display: flex; gap: 0.5rem;" id="agent-os-tabs">
-            <button type="button" class="btn btn-secondary btn-sm active" id="btn-os-unix" onclick="App.setAgentInstallerOS('unix')" style="padding: 2px 8px; font-size: 0.75rem;">macOS / Linux</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="btn-os-win" onclick="App.setAgentInstallerOS('windows')" style="padding: 2px 8px; font-size: 0.75rem;">Windows</button>
+            <button type="button" class="btn btn-secondary btn-sm active" id="btn-os-unix"
+              onclick="App.setAgentInstallerOS('unix')" style="padding: 2px 8px; font-size: 0.75rem;">macOS /
+              Linux</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-os-win"
+              onclick="App.setAgentInstallerOS('windows')"
+              style="padding: 2px 8px; font-size: 0.75rem;">Windows</button>
           </div>
         </div>
 
-        <div style="background: rgba(0,0,0,0.5); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem; position: relative; margin-bottom: 1.25rem;">
+        <div
+          style="background: rgba(0,0,0,0.5); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem; position: relative; margin-bottom: 1.25rem;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
-            <div style="font-size: 0.75rem; color: var(--text-muted);" id="installer-label">Run in terminal (macOS / Linux):</div>
-            <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.75rem;" onclick="App.copyInstallCommand()">📋 Copy Install</button>
+            <div style="font-size: 0.75rem; color: var(--text-muted);" id="installer-label">Run in terminal (macOS /
+              Linux):</div>
+            <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.75rem;"
+              onclick="App.copyInstallCommand()">📋 Copy Install</button>
           </div>
-          <code id="agent-install-command" style="font-family: monospace; font-size: 0.82rem; color: #a78bfa; word-break: break-all; display: block;">
+          <code id="agent-install-command"
+            style="font-family: monospace; font-size: 0.82rem; color: #a78bfa; word-break: break-all; display: block;">
             curl -fsSL /install.sh | sh
           </code>
         </div>
 
         <!-- Step 2: Pair -->
-        <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600; margin-bottom: 0.5rem;">STEP 2: PAIR MACHINE WITH THIS TENANT (Valid for 10 min)</div>
-        <div style="background: rgba(0,0,0,0.5); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem; position: relative; margin-bottom: 1rem;">
+        <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600; margin-bottom: 0.5rem;">STEP 2: PAIR
+          MACHINE WITH THIS TENANT (Valid for 10 min)</div>
+        <div
+          style="background: rgba(0,0,0,0.5); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem; position: relative; margin-bottom: 1rem;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
             <div style="font-size: 0.75rem; color: var(--text-muted);">Run in terminal:</div>
-            <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.75rem;" onclick="App.copyPairingCommand()">📋 Copy Pair</button>
+            <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.75rem;"
+              onclick="App.copyPairingCommand()">📋 Copy Pair</button>
           </div>
-          <code id="agent-pairing-command" style="font-family: monospace; font-size: 0.85rem; color: #38bdf8; word-break: break-all; display: block;">
+          <code id="agent-pairing-command"
+            style="font-family: monospace; font-size: 0.85rem; color: #38bdf8; word-break: break-all; display: block;">
             Generating pairing code...
           </code>
         </div>
 
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: var(--text-muted);">
+        <div
+          style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: var(--text-muted);">
           <span>Requirements: Node.js 18+ & Docker Engine</span>
-          <a href="/api/agent/dist/cloudops-agent" download="cloudops-agent" style="color: var(--accent-primary, #6366f1); text-decoration: none; font-size: 0.8rem;">📥 Download Script Directly</a>
+          <a href="/api/agent/dist/cloudops-agent" download="cloudops-agent"
+            style="color: var(--accent-primary, #6366f1); text-decoration: none; font-size: 0.8rem;">📥 Download Script
+            Directly</a>
         </div>
       </div>
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" onclick="App.closeModals()">Close</button>
-        <button type="button" class="btn btn-primary" onclick="App.copyPairingCommand()">📋 Copy Pairing Command</button>
+        <button type="button" class="btn btn-primary" onclick="App.copyPairingCommand()">📋 Copy Pairing
+          Command</button>
       </div>
     </div>
   </div>
 
   <script src="app.js"></script>
 </body>
+
 </html>

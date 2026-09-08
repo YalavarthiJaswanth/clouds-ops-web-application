@@ -375,6 +375,50 @@ class AWSController {
       next(err);
     }
   }
+
+  /**
+   * POST /api/projects/:projectId/aws/stop
+   */
+  async stopDeployment(req, res, next) {
+    try {
+      const { projectId } = req.params;
+      const orgId = req.organization?.id;
+      const result = await awsDeploymentService.stopEnvironment(projectId, {
+        ...(req.body || {}),
+        organizationId: orgId
+      });
+      auditService.record(projectId, 'AWS_STOP_SUCCESS', {
+        organizationId: orgId,
+        instanceId: result.instanceId,
+        containerName: result.containerName
+      });
+      res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /api/projects/:projectId/aws/restart
+   */
+  async restartDeployment(req, res, next) {
+    try {
+      const { projectId } = req.params;
+      const orgId = req.organization?.id;
+      const result = await awsDeploymentService.restartEnvironment(projectId, {
+        ...(req.body || {}),
+        organizationId: orgId
+      });
+      auditService.record(projectId, 'AWS_RESTART_SUCCESS', {
+        organizationId: orgId,
+        endpoint: result.endpoint,
+        status: result.status
+      });
+      res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 module.exports = new AWSController();

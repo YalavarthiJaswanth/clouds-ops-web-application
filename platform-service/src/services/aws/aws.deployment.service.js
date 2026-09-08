@@ -78,9 +78,33 @@ class AWSDeploymentService {
   }
 
   /**
+   * Ensures the project has a valid built Docker image; if not, builds it automatically
+   */
+  async ensureDockerized(projectId, options = {}) {
+    let project = storageService.getProject(projectId);
+    if (!project) {
+      const err = new Error(`Project '${projectId}' not found`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const dockerState = project.dockerState;
+    if (!dockerState || (!dockerState.image && !dockerState.imageTag)) {
+      const dockerEngine = require('../docker');
+      const dockerResult = await dockerEngine.dockerize(projectId, { platform: options.platform });
+      if (dockerResult.status === 'failed' || dockerResult.status === 'blocked') {
+        const buildErr = new Error(`Docker image build failed: ${dockerResult.error || dockerResult.reason}`);
+        buildErr.code = 'DOCKER_BUILD_FAILED';
+        throw buildErr;
+      }
+    }
+    return storageService.getProject(projectId);
+  }
+
+  /**
    * Deploys project to AWS (ECR -> EC2 via SSM)
    */
   async deploy(projectId, options = {}) {
+    await this.ensureDockerized(projectId, options);
     const { project, localImageTag, port, projectName } = this.validateProject(projectId);
     const orgId = options.organizationId || (project && project.organizationId) || 'org-default-dev';
     let tenantAwsClient = null;
@@ -711,6 +735,124 @@ class AWSDeploymentService {
       success: true,
       projectId,
       status: 'cleaned_up'
+    };
+  }
+
+  /**
+   * Stops the live application container on EC2
+   */
+  async stopEnvironment(projectId, options = {}) {
+    const liveDeployment = this.getLiveDeployment(projectId);
+    const state = this.getStatus(projectId);
+    const instanceId = liveDeployment?.ec2InstanceId || state.ec2?.instanceId;
+    const containerName = liveDeployment?.containerName || state.containerName;
+    const region = options.region || liveDeployment?.awsRegion || state.region || config.aws.region;
+    const orgId = options.organizationId || liveDeployment?.organizationId || state.organizationId;
+
+    if (!instanceId || !containerName) {
+      throw new Error(`No active deployment environment found to stop for project '${projectId}'`);
+    }
+
+    let activeAwsClient = null;
+    if (orgId) {
+      try {
+        activeAwsClient = providerConnectionService.getAWSClientForOrg(orgId);
+      } catch {
+        activeAwsClient = awsClient;
+      }
+    }
+
+    this._addLog(state, 'STOP', `Stopping application container '${containerName}' on EC2 instance '${instanceId}'...`);
+    await ssmService.stopContainer(instanceId, containerName, region, activeAwsClient);
+
+    const now = new Date().toISOString();
+    if (liveDeployment) {
+      db.update('deployments', liveDeployment.id, {
+        status: 'STOPPED',
+        stage: 'STOPPED',
+        isLive: false,
+        updatedAt: now
+      });
+    }
+
+    storageService.updateProject(projectId, {
+      liveStatus: 'STOPPED',
+      latestStatus: 'STOPPED'
+    });
+
+    this._addLog(state, 'STOP', `Application container stopped successfully on EC2.`);
+    return {
+      success: true,
+      status: 'STOPPED',
+      projectId,
+      instanceId,
+      containerName
+    };
+  }
+
+  /**
+   * Restarts the application container on EC2 and verifies health
+   */
+  async restartEnvironment(projectId, options = {}) {
+    const deployments = this.getDeployments(projectId);
+    const targetDeployment = this.getLiveDeployment(projectId) || deployments[0];
+    const state = this.getStatus(projectId);
+
+    if (!targetDeployment) {
+      throw new Error(`No deployment found to restart for project '${projectId}'`);
+    }
+
+    const instanceId = targetDeployment.ec2InstanceId || targetDeployment.ec2?.instanceId || state.ec2?.instanceId;
+    const containerName = targetDeployment.containerName || state.containerName;
+    const region = options.region || targetDeployment.awsRegion || state.region || config.aws.region;
+    const orgId = options.organizationId || targetDeployment.organizationId || state.organizationId;
+    const port = targetDeployment.port || state.port || 3000;
+    const publicEndpoint = targetDeployment.publicUrl || targetDeployment.endpoint || state.publicUrl || state.endpoint;
+
+    if (!instanceId || !containerName) {
+      throw new Error(`EC2 instance or container information missing for project '${projectId}'`);
+    }
+
+    let activeAwsClient = null;
+    if (orgId) {
+      try {
+        activeAwsClient = providerConnectionService.getAWSClientForOrg(orgId);
+      } catch {
+        activeAwsClient = awsClient;
+      }
+    }
+
+    this._addLog(state, 'RESTART', `Restarting container '${containerName}' on EC2 instance '${instanceId}'...`);
+    await ssmService.restartContainer(instanceId, containerName, region, activeAwsClient);
+
+    this._addLog(state, 'HEALTH', `Probing application health at ${publicEndpoint}...`);
+    const healthRes = await this._verifyEndpointHealth(publicEndpoint, port);
+
+    const now = new Date().toISOString();
+    const newStatus = healthRes.status === 'healthy' ? 'SUCCESS' : 'UNHEALTHY';
+
+    db.update('deployments', targetDeployment.id, {
+      status: newStatus,
+      stage: newStatus === 'SUCCESS' ? 'SUCCESS' : 'HEALTH_CHECK_FAILED',
+      isLive: newStatus === 'SUCCESS',
+      healthCheckStatus: healthRes.status,
+      healthCheckResponse: healthRes.body,
+      updatedAt: now
+    });
+
+    storageService.updateProject(projectId, {
+      liveStatus: newStatus === 'SUCCESS' ? 'LIVE' : 'UNHEALTHY',
+      latestStatus: newStatus
+    });
+
+    this._addLog(state, 'RESTART', `Restart completed: ${healthRes.status.toUpperCase()} (HTTP ${healthRes.statusCode || 'N/A'})`);
+
+    return {
+      success: true,
+      status: newStatus,
+      health: healthRes,
+      projectId,
+      endpoint: publicEndpoint
     };
   }
 }
