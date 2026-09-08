@@ -90,11 +90,12 @@
     }
 
     const res = await fetch(endpoint, {
+      credentials: 'same-origin',
       ...options,
       headers
     });
 
-    if (res.status === 401 && !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/signup') && !endpoint.includes('/api/auth/google')) {
+    if (res.status === 401 && !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/signup') && !endpoint.includes('/api/auth/google') && !endpoint.includes('/api/auth/me')) {
       clearSession();
       updateUI();
       throw new Error('Authentication required');
@@ -134,7 +135,13 @@
   }
 
   async function restoreSession() {
-    // 0. Parse OAuth callback handoff token from URL hash (#auth_token=...)
+    // 0. Set initial checking state to avoid showing Guest immediately while verifying
+    const userName = document.getElementById('sidebar-user-name');
+    const userEmail = document.getElementById('sidebar-user-email');
+    if (userName && !state.token) userName.textContent = 'Checking session...';
+    if (userEmail && !state.token) userEmail.textContent = 'Authenticating...';
+
+    // 1. Parse OAuth callback handoff token from URL hash (#auth_token=...)
     try {
       const hash = window.location.hash || '';
       if (hash.includes('auth_token=')) {
@@ -163,7 +170,7 @@
       console.warn('[CloudOps] OAuth URL parse error:', e.message);
     }
 
-    // 1. Fetch auth config (Google Client ID & TTL)
+    // 2. Fetch auth config (Google Client ID & TTL)
     try {
       const config = await api('/api/auth/config');
       state.authConfig = config;
@@ -172,19 +179,35 @@
       console.warn('[CloudOps] Auth config fetch failed:', e.message);
     }
 
-    // 2. Validate existing token
-    if (state.token) {
-      try {
-        const me = await api('/api/auth/me');
+    // 3. Validate existing session with backend (via token or session_token cookie)
+    try {
+      const me = await api('/api/auth/me');
+      if (me && me.user) {
         state.user = me.user;
         state.organization = me.organization || null;
         state.membership = me.membership || null;
-      } catch {
+        if (me.token) {
+          state.token = me.token;
+          localStorage.setItem('cloudops_token', me.token);
+        }
+      } else {
         clearSession();
       }
+    } catch {
+      clearSession();
     }
 
     updateUI();
+
+    // 4. Check for route or hash requesting login or signup modal
+    const path = window.location.pathname;
+    const currentHash = window.location.hash;
+    if (path === '/login' || currentHash === '#login') {
+      if (!state.user) openAuthModal('login');
+    } else if (path === '/signup' || currentHash === '#signup') {
+      if (!state.user) openAuthModal('signup');
+    }
+
     await loadAllData();
   }
 
@@ -1152,7 +1175,16 @@
   function openAuthModal(tab = 'login') {
     showAuthTab(tab);
     const modal = document.getElementById('modal-auth');
-    if (modal) modal.classList.remove('hidden');
+    if (modal) {
+      modal.classList.remove('hidden');
+      setTimeout(() => {
+        if (tab === 'signup') {
+          document.getElementById('signup-name')?.focus();
+        } else {
+          document.getElementById('login-email')?.focus();
+        }
+      }, 50);
+    }
   }
 
   function showAuthTab(tab) {
@@ -1160,20 +1192,20 @@
     const tabSignup = document.getElementById('tab-signup');
     const formLogin = document.getElementById('form-login');
     const formSignup = document.getElementById('form-signup');
-    const modalTitle = document.getElementById('modal-auth-title');
+    const modalSubtitle = document.getElementById('modal-auth-subtitle');
 
     if (tab === 'signup') {
       if (tabLogin) tabLogin.classList.remove('active');
       if (tabSignup) tabSignup.classList.add('active');
       if (formLogin) formLogin.classList.add('hidden');
       if (formSignup) formSignup.classList.remove('hidden');
-      if (modalTitle) modalTitle.textContent = 'Create New CloudOps Workspace';
+      if (modalSubtitle) modalSubtitle.textContent = 'Create your account';
     } else {
       if (tabLogin) tabLogin.classList.add('active');
       if (tabSignup) tabSignup.classList.remove('active');
       if (formLogin) formLogin.classList.remove('hidden');
       if (formSignup) formSignup.classList.add('hidden');
-      if (modalTitle) modalTitle.textContent = 'Sign In to CloudOps';
+      if (modalSubtitle) modalSubtitle.textContent = 'Welcome back';
     }
   }
 
@@ -1184,7 +1216,7 @@
       clearInterval(dockerPairingInterval);
       dockerPairingInterval = null;
     }
-    document.querySelectorAll('.modal-backdrop').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.modal-backdrop, .modal-overlay').forEach(el => el.classList.add('hidden'));
   }
 
   async function openDockerPairingModal() {
@@ -1363,7 +1395,7 @@
     } catch {}
     clearSession();
     notify('Signed out successfully.', 'info');
-    switchView('overview');
+    openAuthModal('login');
   }
 
   // AWS Credential Handler

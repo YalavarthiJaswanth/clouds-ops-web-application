@@ -48,6 +48,15 @@ mongodbService.connect().then(async (connected) => {
   }
 }).catch(() => {});
 
+// Google OAuth callback interceptor on root if redirected with ?code=...
+app.get('/', (req, res, next) => {
+  if (req.query.code || req.query.error) {
+    const authController = require('./controllers/auth.controller');
+    return authController.googleCallback(req, res);
+  }
+  next();
+});
+
 // Serve static frontend UI
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -85,6 +94,14 @@ app.use('/api/*', (req, res) => {
     error: 'Endpoint not found',
     path: req.originalUrl
   });
+});
+
+// SPA fallback for client-side navigation (e.g. /login, /signup)
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/health')) {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Central error handling middleware

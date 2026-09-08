@@ -6,7 +6,7 @@ class GoogleAuthService {
   constructor() {
     this.clientId = config.google?.clientId || process.env.GOOGLE_CLIENT_ID || '';
     this.clientSecret = config.google?.clientSecret || process.env.GOOGLE_CLIENT_SECRET || '';
-    this.callbackUrl = config.google?.callbackUrl || process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4000/api/auth/google/callback';
+    this.callbackUrl = config.google?.callbackUrl || process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4000';
     this.client = new OAuth2Client(this.clientId, this.clientSecret, this.callbackUrl);
   }
 
@@ -126,7 +126,10 @@ class GoogleAuthService {
 
     const client = this._getClient();
     try {
-      const { tokens } = await client.getToken(code.trim());
+      const { tokens } = await client.getToken({
+        code: code.trim(),
+        redirect_uri: this.callbackUrl
+      });
       if (tokens.id_token) {
         return await this.verifyIdToken(tokens.id_token);
       }

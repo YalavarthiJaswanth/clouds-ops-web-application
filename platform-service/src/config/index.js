@@ -71,7 +71,7 @@ const config = {
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-    callbackUrl: process.env.GOOGLE_CALLBACK_URL || `${(process.env.PUBLIC_BASE_URL || process.env.CLOUDOPS_PUBLIC_URL || 'http://localhost:4000').replace(/\/+$/, '')}/api/auth/google/callback`
+    callbackUrl: process.env.GOOGLE_CALLBACK_URL || `${(process.env.PUBLIC_BASE_URL || process.env.CLOUDOPS_PUBLIC_URL || 'http://localhost:4000').replace(/\/+$/, '')}`
   },
   mongodb: {
     uri: process.env.MONGODB_URI || '',
