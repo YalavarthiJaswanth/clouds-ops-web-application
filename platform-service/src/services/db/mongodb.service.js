@@ -150,8 +150,11 @@ class MongoDBService {
         createdAt: record.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
+      const filter = (collectionName === 'sessions' && doc.tokenHash)
+        ? { tokenHash: doc.tokenHash }
+        : { id: doc.id };
       await this.db.collection(collectionName).updateOne(
-        { id: doc.id },
+        filter,
         { $set: doc },
         { upsert: true }
       );

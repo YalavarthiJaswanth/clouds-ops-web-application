@@ -64,31 +64,19 @@ const distRoutes = require('./routes/dist.routes');
 const authRoutes = require('./routes/auth.routes');
 const connectionRoutes = require('./routes/connection.routes');
 const organizationRoutes = require('./routes/organization.routes');
-const auditRoutes = require('./routes/audit.routes');
 const agentRoutes = require('./routes/agent.routes');
-const githubRoutes = require('./routes/github.routes');
-const jenkinsRoutes = require('./routes/jenkins.routes');
-const kubernetesRoutes = require('./routes/kubernetes.routes');
 const awsRoutes = require('./routes/aws.routes');
-const terraformController = require('./controllers/terraform.controller');
-const { globalRouter: selfHealingGlobalRouter } = require('./routes/selfHealing.routes');
 const projectRoutes = require('./routes/project.routes');
 
-// Mount Distribution & Installer routes
+// Mount Distribution & Installer routes (for Docker agent installer)
 app.use(distRoutes);
 
-// Mount API routes
+// Mount core platform API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/connections', connectionRoutes);
 app.use('/api/organizations', organizationRoutes);
-app.use('/api/audit', auditRoutes);
 app.use('/api/agent', agentRoutes);
-app.use('/api/github', githubRoutes);
-app.use('/api/jenkins', jenkinsRoutes);
-app.use('/api/kubernetes', kubernetesRoutes);
 app.use('/api/aws', awsRoutes);
-app.get('/api/terraform/status', terraformController.getGlobalStatus);
-app.use('/api/recovery', selfHealingGlobalRouter);
 app.use('/api/projects', projectRoutes);
 
 // 404 handler for unmatched API routes

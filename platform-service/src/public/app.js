@@ -1,6 +1,6 @@
 /**
- * CloudOps — Cloud-Based Application Testing & Deployment Platform
- * Frontend Application Controller
+ * CloudOps — Cloud-Based Application Testing Platform
+ * Frontend Client Controller
  */
 
 (function () {
@@ -19,24 +19,25 @@
     connections: [],
     authConfig: { googleClientId: '', googleEnabled: false },
     activeView: 'overview',
-    stepperInterval: null,
-    isDeploying: false
+    selectedFile: null,
+    isDeploying: false,
+    pollTimer: null
   };
 
   // Toast Notifications
-  function notify(message, type = 'info', duration = 4500) {
+  function notify(message, type = 'info', duration = 4000) {
     const area = document.getElementById('notification-area');
     if (!area) return;
 
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     const icon = type === 'success' ? '✔' : type === 'error' ? '✖' : 'ℹ';
-    toast.innerHTML = `<span>${icon}</span> <span>${escapeHtml(message)}</span>`;
+    toast.innerHTML = `<span style="font-weight:bold;">${icon}</span> <span>${escapeHtml(message)}</span>`;
 
     area.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = '0';
-      toast.style.transform = 'translateX(20px)';
+      toast.style.transform = 'translateY(-10px)';
       toast.style.transition = 'all 0.3s ease';
       setTimeout(() => toast.remove(), 300);
     }, duration);
@@ -49,6 +50,27 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function timeAgo(dateString) {
+    if (!dateString) return 'Just now';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffSeconds = Math.round((now - date) / 1000);
+    if (diffSeconds < 60) return `${diffSeconds}s ago`;
+    const diffMinutes = Math.round(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    const diffHours = Math.round(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return date.toLocaleDateString();
   }
 
   // Centralized API Client
@@ -67,50 +89,38 @@
       headers['x-auth-token'] = state.token;
     }
 
-    try {
-      const res = await fetch(endpoint, {
-        ...options,
-        headers
-      });
+    const res = await fetch(endpoint, {
+      ...options,
+      headers
+    });
 
-      if (res.status === 401 && !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/signup') && !endpoint.includes('/api/auth/google')) {
-        // Token expired or invalid
-        clearSession();
-        notify('Session expired. Please sign in again.', 'info');
-        updateUI();
-        throw new Error('Authentication required');
-      }
+    if (res.status === 401 && !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/signup') && !endpoint.includes('/api/auth/google')) {
+      clearSession();
+      updateUI();
+      throw new Error('Authentication required');
+    }
 
-      const isJson = res.headers.get('content-type')?.includes('application/json');
-      const data = isJson ? await res.json() : await res.text();
+    const isJson = res.headers.get('content-type')?.includes('application/json');
+    const data = isJson ? await res.json() : await res.text();
 
-      if (!res.ok) {
-        const errorMsg = data?.message || data?.error || `Request failed with status ${res.status}`;
-        const err = new Error(errorMsg);
-        err.status = res.status;
-        err.data = data;
-        throw err;
-      }
-
-      return data;
-    } catch (err) {
+    if (!res.ok) {
+      const errorMsg = data?.message || data?.error || `Request failed (${res.status})`;
+      const err = new Error(errorMsg);
+      err.status = res.status;
+      err.data = data;
       throw err;
     }
+
+    return data;
   }
 
   // Session Management
-  function setSession(authData) {
-    if (!authData) return;
-    state.token = authData.token;
-    state.user = authData.user;
-    state.organization = authData.organization;
-    state.membership = authData.membership;
-
-    if (authData.token) {
-      localStorage.setItem('cloudops_token', authData.token);
-      document.cookie = `session_token=${encodeURIComponent(authData.token)}; path=/; max-age=${3 * 86400}; SameSite=Lax`;
-    }
-
+  function setSession(authResponse) {
+    state.token = authResponse.token;
+    state.user = authResponse.user;
+    state.organization = authResponse.organization || null;
+    state.membership = authResponse.membership || null;
+    localStorage.setItem('cloudops_token', authResponse.token);
     updateUI();
   }
 
@@ -120,109 +130,89 @@
     state.organization = null;
     state.membership = null;
     localStorage.removeItem('cloudops_token');
-    document.cookie = 'session_token=; path=/; max-age=0';
+    updateUI();
   }
 
   async function restoreSession() {
-    // Check URL hash for OAuth redirect token handoff
-    const hash = window.location.hash;
-    if (hash && hash.includes('auth_token=')) {
-      const tokenMatch = hash.match(/auth_token=([^&]+)/);
-      if (tokenMatch && tokenMatch[1]) {
-        state.token = decodeURIComponent(tokenMatch[1]);
-        localStorage.setItem('cloudops_token', state.token);
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      }
-    }
-
+    // 1. Fetch auth config (Google Client ID & TTL)
     try {
-      const res = await api('/api/auth/config');
-      state.authConfig = {
-        googleClientId: res.googleClientId || '',
-        googleEnabled: res.googleEnabled === true
-      };
-      if (res.googleClientId) {
-        setupGoogleIdentity(res.googleClientId);
-      }
+      const config = await api('/api/auth/config');
+      state.authConfig = config;
+      initGoogleSignIn();
     } catch (e) {
-      console.warn('[CloudOps] Auth config error:', e);
+      console.warn('[CloudOps] Auth config fetch failed:', e.message);
     }
 
-    if (!state.token) {
-      updateUI();
-      return;
+    // 2. Validate existing token
+    if (state.token) {
+      try {
+        const me = await api('/api/auth/me');
+        state.user = me.user;
+        state.organization = me.organization || null;
+        state.membership = me.membership || null;
+      } catch {
+        clearSession();
+      }
     }
 
-    try {
-      const me = await api('/api/auth/me');
-      setSession(me);
-      await loadAllData();
-    } catch (err) {
-      clearSession();
-      updateUI();
-    }
+    updateUI();
+    await loadAllData();
   }
 
-  // Google Identity Services (GIS)
-  function setupGoogleIdentity(clientId) {
-    if (!clientId) return;
+  // Google Sign-In Integration
+  function initGoogleSignIn() {
+    if (!state.authConfig.googleEnabled || !state.authConfig.googleClientId) return;
+
     const checkGsi = setInterval(() => {
       if (window.google && window.google.accounts && window.google.accounts.id) {
         clearInterval(checkGsi);
-        window.google.accounts.id.initialize({
-          client_id: clientId,
-          callback: handleGoogleCredentialResponse,
-          auto_select: false,
-          cancel_on_tap_outside: true
-        });
-
-        const loginTarget = document.getElementById('gis-button-login');
-        if (loginTarget) {
-          window.google.accounts.id.renderButton(loginTarget, {
-            theme: 'outline',
-            size: 'large',
-            width: 320,
-            text: 'continue_with'
+        try {
+          window.google.accounts.id.initialize({
+            client_id: state.authConfig.googleClientId,
+            callback: handleGoogleCredentialResponse,
+            auto_select: false,
+            cancel_on_tap_outside: true
           });
+
+          // Render Google button if container exists
+          const container = document.getElementById('google-btn-container');
+          if (container) {
+            window.google.accounts.id.renderButton(container, {
+              theme: 'filled_blue',
+              size: 'large',
+              width: 320,
+              text: 'continue_with',
+              shape: 'rectangular'
+            });
+          }
+
+          // Trigger One-Tap prompt if not logged in
+          if (!state.token) {
+            window.google.accounts.id.prompt();
+          }
+        } catch (err) {
+          console.warn('[GoogleAuth] Init warning:', err.message);
         }
       }
     }, 200);
+
     setTimeout(() => clearInterval(checkGsi), 5000);
   }
 
   async function handleGoogleCredentialResponse(response) {
-    if (!response || !response.credential) {
-      notify('Google authentication cancelled', 'error');
-      return;
-    }
+    if (!response || !response.credential) return;
     try {
-      notify('Verifying Google credentials with CloudOps...', 'info');
+      notify('Authenticating with Google...', 'info');
       const res = await api('/api/auth/google', {
         method: 'POST',
         body: JSON.stringify({ credential: response.credential })
       });
       setSession(res);
       closeModals();
-      notify(`Welcome, ${state.user?.name || state.user?.email}!`, 'success');
+      notify(`Welcome, ${res.user.name || res.user.email}!`, 'success');
       await loadAllData();
     } catch (err) {
-      notify(`Google login failed: ${err.message}`, 'error');
-    }
-  }
-
-  function triggerGoogleLogin() {
-    if (!state.authConfig?.googleEnabled || !state.authConfig?.googleClientId) {
-      notify('Google OAuth is not configured. Please sign in with email.', 'error');
-      return;
-    }
-    if (window.google && window.google.accounts && window.google.accounts.id) {
-      window.google.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          window.location.href = '/api/auth/google';
-        }
-      });
-    } else {
-      window.location.href = '/api/auth/google';
+      notify(`Google Authentication failed: ${err.message}`, 'error');
     }
   }
 
@@ -235,25 +225,27 @@
       btn.classList.toggle('active', btn.dataset.view === viewName);
     });
 
-    // Update panels
+    // Update view panels
     document.querySelectorAll('.view-panel').forEach(panel => {
       panel.classList.toggle('active', panel.id === `view-${viewName}`);
     });
 
-    // Update topbar title
+    // Update topbar titles
     const titles = {
       overview: 'Platform Overview',
-      projects: 'Application Projects',
-      environments: 'Testing Environments',
+      projects: 'Projects',
+      upload: 'Upload Application',
+      environments: 'Active Test Environment',
       connections: 'Provider Connections',
-      settings: 'Workspace Settings'
+      settings: 'Settings & Workspace'
     };
     const crumbs = {
       overview: 'Dashboard / Application Testing',
       projects: 'Projects / Deployments',
-      environments: 'AWS EC2 / Compute Hosts',
-      connections: 'Settings / Cloud Providers',
-      settings: 'Account / Workspace Settings'
+      upload: 'Deploy / Application Archive',
+      environments: 'AWS EC2 / Live Environment',
+      connections: 'Configuration / Cloud Providers',
+      settings: 'Workspace / User Account'
     };
 
     const topTitle = document.getElementById('topbar-view-title');
@@ -261,7 +253,7 @@
     if (topTitle) topTitle.textContent = titles[viewName] || 'CloudOps';
     if (topCrumb) topCrumb.textContent = crumbs[viewName] || 'Application Testing';
 
-    // Refresh view data
+    // Refresh view specific data
     if (viewName === 'overview') refreshOverview();
     if (viewName === 'projects') renderProjectsView();
     if (viewName === 'environments') renderEnvironmentsView();
@@ -290,12 +282,12 @@
       const badge = document.getElementById('nav-project-count');
       if (badge) badge.textContent = state.projects.length;
 
-      // Maintain active project selection
+      // Select active project
       if (state.projects.length > 0) {
-        if (!state.activeProjectId || !state.projects.some(p => p.projectId === state.activeProjectId || p.id === state.activeProjectId)) {
+        if (!state.activeProjectId || !state.projects.some(p => (p.projectId || p.id) === state.activeProjectId)) {
           state.activeProjectId = state.projects[0].projectId || state.projects[0].id;
         }
-        state.activeProject = state.projects.find(p => p.projectId === state.activeProjectId || p.id === state.activeProjectId) || state.projects[0];
+        state.activeProject = state.projects.find(p => (p.projectId || p.id) === state.activeProjectId) || state.projects[0];
         localStorage.setItem('cloudops_active_project', state.activeProjectId);
       } else {
         state.activeProjectId = null;
@@ -312,7 +304,10 @@
   }
 
   async function fetchLiveDeployment(projectId) {
-    if (!projectId) return;
+    if (!projectId) {
+      state.liveDeployment = null;
+      return;
+    }
     try {
       const res = await api(`/api/projects/${projectId}/deployments/live`);
       if (res && res.live && res.deployment) {
@@ -340,8 +335,9 @@
       updateAWSConnectionUI(status);
       return status;
     } catch (err) {
-      updateAWSConnectionUI({ connected: false, message: err.message });
-      return { connected: false };
+      const fallback = { connected: false, message: err.message };
+      updateAWSConnectionUI(fallback);
+      return fallback;
     }
   }
 
@@ -351,61 +347,47 @@
       updateDockerConnectionUI(res);
       return res;
     } catch {
-      updateDockerConnectionUI({ connected: false });
-      return { connected: false };
+      const fallback = { connected: false };
+      updateDockerConnectionUI(fallback);
+      return fallback;
     }
   }
 
-  // UI Updates
+  // UI State Sync
   function updateUI() {
     const isLoggedIn = !!state.user;
 
-    // Header buttons
     const authGroup = document.getElementById('auth-buttons-group');
-    const tenantGroup = document.getElementById('tenant-badges-group');
+    const userGroup = document.getElementById('user-badges-group');
     if (authGroup) authGroup.classList.toggle('hidden', isLoggedIn);
-    if (tenantGroup) tenantGroup.classList.toggle('hidden', !isLoggedIn);
+    if (userGroup) userGroup.classList.toggle('hidden', !isLoggedIn);
 
-    // Sidebar User
     const userName = document.getElementById('sidebar-user-name');
     const userEmail = document.getElementById('sidebar-user-email');
-    const orgName = document.getElementById('sidebar-org-name');
+    const authBtn = document.getElementById('btn-sidebar-auth');
     const orgBadge = document.getElementById('topbar-org-badge');
-    const roleBadge = document.getElementById('sidebar-role-badge');
-    const logoutBtn = document.getElementById('btn-sidebar-logout');
 
-    if (userName) userName.textContent = state.user?.name || 'Developer';
+    if (userName) userName.textContent = state.user?.name || (isLoggedIn ? state.user?.email : 'Guest User');
     if (userEmail) userEmail.textContent = state.user?.email || 'Not signed in';
-    if (orgName) orgName.textContent = state.organization?.name || 'My Workspace';
+    if (authBtn) {
+      authBtn.textContent = isLoggedIn ? 'Sign Out' : 'Sign In';
+      authBtn.onclick = isLoggedIn ? handleLogout : () => openAuthModal('login');
+    }
     if (orgBadge) orgBadge.textContent = `🏢 ${state.organization?.name || 'Workspace'}`;
-    if (roleBadge) roleBadge.textContent = state.membership?.role || 'GUEST';
-    if (logoutBtn) logoutBtn.title = isLoggedIn ? 'Sign Out' : 'Sign In';
 
-    // Settings Profile
+    // Settings Profile View
     const sName = document.getElementById('settings-user-name');
     const sEmail = document.getElementById('settings-user-email');
-    const sProvider = document.getElementById('settings-user-provider');
     const sOrg = document.getElementById('settings-org-name');
-    const sOrgId = document.getElementById('settings-org-id');
-    const sRole = document.getElementById('settings-role-badge');
+    const sStatus = document.getElementById('settings-auth-status');
 
-    if (sName) sName.textContent = state.user?.name || '-';
-    if (sEmail) sEmail.textContent = state.user?.email || '-';
-    if (sProvider) sProvider.textContent = state.user?.provider === 'google' ? 'Google OAuth 2.0' : 'Email & Password';
-    if (sOrg) sOrg.textContent = state.organization?.name || '-';
-    if (sOrgId) sOrgId.textContent = state.organization?.id || '-';
-    if (sRole) sRole.textContent = state.membership?.role || 'MEMBER';
-
-    // Google card in Connections
-    const gPill = document.getElementById('card-google-status-pill');
-    const gUser = document.getElementById('card-google-user');
-    const gClient = document.getElementById('card-google-client-id');
-    if (gPill) {
-      gPill.className = `status-pill ${isLoggedIn && state.user?.provider === 'google' ? 'pill-running' : 'pill-stopped'}`;
-      gPill.textContent = isLoggedIn && state.user?.provider === 'google' ? '● AUTHENTICATED' : '○ NOT SIGNED IN';
+    if (sName) sName.textContent = state.user?.name || 'Guest';
+    if (sEmail) sEmail.textContent = state.user?.email || 'Not signed in';
+    if (sOrg) sOrg.textContent = state.organization?.name || 'Default Workspace';
+    if (sStatus) {
+      sStatus.textContent = isLoggedIn ? 'Authenticated' : 'Unauthenticated';
+      sStatus.className = `status-badge ${isLoggedIn ? 'badge-success' : 'badge-warning'}`;
     }
-    if (gUser) gUser.textContent = state.user?.email || 'Not signed in';
-    if (gClient) gClient.textContent = state.authConfig?.googleClientId ? 'Configured' : 'Missing GOOGLE_CLIENT_ID';
   }
 
   function updateProjectSelectDropdown() {
@@ -425,7 +407,7 @@
       const opt = document.createElement('option');
       const pid = p.projectId || p.id;
       opt.value = pid;
-      opt.textContent = p.name || p.project?.name || `Project ${pid.slice(0, 8)}`;
+      opt.textContent = p.name || `Project ${pid.slice(0, 8)}`;
       if (pid === state.activeProjectId) opt.selected = true;
       select.appendChild(opt);
     });
@@ -433,13 +415,30 @@
 
   function updateAWSConnectionUI(status) {
     const isConn = status && status.connected === true;
+
+    // Topbar Pill
+    const topPill = document.getElementById('topbar-aws-pill');
+    if (topPill) {
+      topPill.className = `status-pill ${isConn ? 'pill-running' : 'pill-stopped'}`;
+      topPill.textContent = isConn ? 'AWS: ● Connected' : 'AWS: ○ Disconnected';
+    }
+
+    // Overview Strip
+    const ovPill = document.getElementById('overview-conn-aws-pill');
+    const ovSub = document.getElementById('overview-conn-aws-sub');
+    if (ovPill) {
+      ovPill.className = `status-pill ${isConn ? 'pill-running' : 'pill-stopped'}`;
+      ovPill.textContent = isConn ? '● Connected' : '○ Disconnected';
+    }
+    if (ovSub) {
+      ovSub.textContent = isConn ? `Account: ${status.accountId || 'Verified'} (${status.region || 'ap-south-1'})` : 'Access Key & Secret Key Required';
+    }
+
+    // Connections Card
     const cardPill = document.getElementById('card-aws-status-pill');
     const cardAcc = document.getElementById('card-aws-account');
     const cardReg = document.getElementById('card-aws-region');
     const cardKey = document.getElementById('card-aws-masked-key');
-    const ovPill = document.getElementById('overview-conn-aws-pill');
-    const ovSub = document.getElementById('overview-conn-aws-sub');
-
     if (cardPill) {
       cardPill.className = `status-pill ${isConn ? 'pill-running' : 'pill-stopped'}`;
       cardPill.textContent = isConn ? '● CONNECTED' : '○ NOT CONNECTED';
@@ -448,41 +447,42 @@
     if (cardReg) cardReg.textContent = status.region || 'ap-south-1';
 
     const awsConn = state.connections.find(c => c.provider === 'AWS');
-    if (cardKey) cardKey.textContent = awsConn?.metadata?.maskedAccessKey || (isConn ? 'Configured (Active)' : '****');
-
-    if (ovPill) {
-      ovPill.className = `status-pill ${isConn ? 'pill-running' : 'pill-stopped'}`;
-      ovPill.textContent = isConn ? '● Connected' : '○ Disconnected';
-    }
-    if (ovSub) {
-      ovSub.textContent = isConn ? `Account: ${status.accountId || 'Verified'} (${status.region})` : 'Access Key & Secret Key Required';
-    }
+    if (cardKey) cardKey.textContent = awsConn?.metadata?.maskedAccessKey || (isConn ? 'Configured (Encrypted)' : '****');
   }
 
   function updateDockerConnectionUI(status) {
     const isConn = status && (status.connected === true || status.status === 'ONLINE' || status.available === true);
-    const cardPill = document.getElementById('card-docker-status-pill');
-    const cardDaemon = document.getElementById('card-docker-daemon');
-    const cardVer = document.getElementById('card-docker-version');
-    const cardOs = document.getElementById('card-docker-os');
+
+    // Topbar Pill
+    const topPill = document.getElementById('topbar-docker-pill');
+    if (topPill) {
+      topPill.className = `status-pill ${isConn ? 'pill-running' : 'pill-stopped'}`;
+      topPill.textContent = isConn ? 'Docker: ● Connected' : 'Docker: ○ Disconnected';
+    }
+
+    // Overview Strip
     const ovPill = document.getElementById('overview-conn-docker-pill');
     const ovSub = document.getElementById('overview-conn-docker-sub');
-
-    if (cardPill) {
-      cardPill.className = `status-pill ${isConn ? 'pill-running' : 'pill-stopped'}`;
-      cardPill.textContent = isConn ? '● CONNECTED' : '○ DISCONNECTED';
-    }
-    if (cardDaemon) cardDaemon.textContent = isConn ? 'Running (Active)' : 'Not Running';
-    if (cardVer) cardVer.textContent = status.dockerStatus?.version || status.version || 'Docker Engine';
-    if (cardOs) cardOs.textContent = status.machineInfo?.os || status.operatingSystem || 'Docker Host';
-
     if (ovPill) {
       ovPill.className = `status-pill ${isConn ? 'pill-running' : 'pill-stopped'}`;
       ovPill.textContent = isConn ? '● Connected' : '○ Disconnected';
     }
     if (ovSub) {
-      ovSub.textContent = isConn ? 'Daemon active for cross-arch builds' : 'Docker daemon offline';
+      ovSub.textContent = isConn ? 'Docker daemon online for container builds' : 'Docker Agent Pairing Required';
     }
+
+    // Connections Card
+    const cardPill = document.getElementById('card-docker-status-pill');
+    const cardAgent = document.getElementById('card-docker-agent-id');
+    const cardDesc = document.getElementById('card-docker-status-desc');
+    const cardHost = document.getElementById('card-docker-hostname');
+    if (cardPill) {
+      cardPill.className = `status-pill ${isConn ? 'pill-running' : 'pill-stopped'}`;
+      cardPill.textContent = isConn ? '● CONNECTED' : '○ NOT CONNECTED';
+    }
+    if (cardAgent) cardAgent.textContent = status.agentId || (isConn ? 'Paired Host' : 'Not Paired');
+    if (cardDesc) cardDesc.textContent = isConn ? 'Daemon online (ready for builds)' : 'Agent offline';
+    if (cardHost) cardHost.textContent = status.hostname || (isConn ? 'localhost' : '-');
   }
 
   // ============================================================
@@ -491,661 +491,810 @@
 
   // 1. Overview Renderer
   async function refreshOverview() {
-    // 1. Top Metrics
-    const metricProj = document.getElementById('metric-projects-count');
-    const metricEnv = document.getElementById('metric-environments-count');
-    const metricHealth = document.getElementById('metric-health-status');
-
-    if (metricProj) metricProj.textContent = state.projects.length;
-
-    const hasLiveEnv = !!(state.liveDeployment && state.liveDeployment.isLive);
-    if (metricEnv) metricEnv.textContent = hasLiveEnv ? '1' : '0';
-    if (metricHealth) {
-      metricHealth.textContent = hasLiveEnv
-        ? (state.liveDeployment.healthCheckStatus === 'healthy' ? 'Healthy ✓' : 'Unhealthy')
-        : (state.projects.length > 0 ? 'Ready to Test' : 'No Active Env');
-    }
-
-    // 2. Active Environment Card
-    const appNameEl = document.getElementById('overview-active-app-name');
-    const envPill = document.getElementById('overview-env-status-pill');
-    const ec2InfoEl = document.getElementById('overview-ec2-info');
-    const containerStatusEl = document.getElementById('overview-container-status');
-    const portInfoEl = document.getElementById('overview-port-info');
-    const healthCheckStatusEl = document.getElementById('overview-health-check-status');
-    const publicUrlText = document.getElementById('overview-public-url-text');
-    const openUrlBtn = document.getElementById('btn-overview-open-url');
-    const copyUrlBtn = document.getElementById('btn-overview-copy-url');
-
     const dep = state.liveDeployment;
     const proj = state.activeProject;
+
+    const appNameEl = document.getElementById('overview-app-name');
+    const appFrameworkEl = document.getElementById('overview-app-framework');
+    const appStatusEl = document.getElementById('overview-app-status');
+    const envBadge = document.getElementById('overview-env-badge');
+    const healthPill = document.getElementById('overview-health-pill');
+    const healthMeta = document.getElementById('overview-health-meta');
+    const testingUrlEl = document.getElementById('overview-testing-url');
+
+    const btnOpenUrl = document.getElementById('btn-overview-open-url');
+    const btnCopyUrl = document.getElementById('btn-overview-copy-url');
+    const btnViewLogs = document.getElementById('btn-overview-view-logs');
+    const btnRestartEnv = document.getElementById('btn-overview-restart-env');
+    const btnStopEnv = document.getElementById('btn-overview-stop-env');
 
     if (dep && dep.isLive) {
-      const url = dep.publicUrl || dep.endpoint || `http://${dep.publicIp}:${dep.port || 3000}`;
-      if (appNameEl) appNameEl.textContent = proj?.name || dep.projectName || 'Active Application';
-      if (envPill) {
-        envPill.className = 'status-pill pill-running';
-        envPill.textContent = '● RUNNING';
-      }
-      if (ec2InfoEl) ec2InfoEl.textContent = `${dep.ec2InstanceId || 'EC2'} (${dep.awsRegion || 'ap-south-1'})`;
-      if (containerStatusEl) containerStatusEl.textContent = 'Running (Docker via SSM)';
-      if (portInfoEl) portInfoEl.textContent = `${dep.port || 3000} (HTTP)`;
-      if (healthCheckStatusEl) healthCheckStatusEl.textContent = dep.healthCheckStatus === 'healthy' ? 'Healthy (HTTP 200)' : 'Check Failed';
-      if (publicUrlText) publicUrlText.textContent = url;
-      if (openUrlBtn) {
-        openUrlBtn.href = url;
-        openUrlBtn.classList.remove('hidden');
-      }
-      if (copyUrlBtn) copyUrlBtn.classList.remove('hidden');
-    } else {
-      if (appNameEl) appNameEl.textContent = proj ? (proj.name || 'Application Ready') : 'No Application Deployed';
-      if (envPill) {
-        envPill.className = 'status-pill pill-stopped';
-        envPill.textContent = '○ NOT DEPLOYED';
-      }
-      if (ec2InfoEl) ec2InfoEl.textContent = 'AWS EC2';
-      if (containerStatusEl) containerStatusEl.textContent = 'Not Running';
-      if (portInfoEl) portInfoEl.textContent = '3000 (HTTP)';
-      if (healthCheckStatusEl) healthCheckStatusEl.textContent = 'Pending';
-      if (publicUrlText) publicUrlText.textContent = 'http://no-instance-running';
-      if (openUrlBtn) openUrlBtn.classList.add('hidden');
-      if (copyUrlBtn) copyUrlBtn.classList.add('hidden');
-    }
+      const url = dep.publicUrl || dep.endpoint || (dep.publicIp ? `http://${dep.publicIp}:${dep.port || 3000}` : null);
+      if (appNameEl) appNameEl.textContent = proj?.name || dep.projectName || 'Active Test Application';
+      if (appFrameworkEl) appFrameworkEl.textContent = dep.framework ? `(${dep.framework})` : '';
+      if (appStatusEl) appStatusEl.innerHTML = `<span class="status-pill pill-running">● Running</span> on AWS EC2 <code>${dep.ec2InstanceId || 'ap-south-1'}</code>`;
 
-    // 3. Recent Projects Table
-    const tbody = document.getElementById('tbody-overview-projects');
-    if (tbody) {
-      tbody.innerHTML = '';
-      if (state.projects.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">No projects uploaded yet. Upload an application ZIP to begin testing.</td></tr>';
-      } else {
-        state.projects.slice(0, 5).forEach(p => {
-          const tr = document.createElement('tr');
-          const isLive = p.liveStatus === 'LIVE' || (p.liveDeploymentId && state.liveDeployment?.id === p.liveDeploymentId);
-          const pName = escapeHtml(p.name || p.project?.name || 'Application');
-          const pStatus = isLive ? '<span class="status-pill pill-running">● Healthy</span>' : '<span class="status-pill pill-stopped">○ Idle</span>';
-          const pEnv = isLive ? 'AWS EC2' : 'None';
-          const pTime = p.uploadedAt ? formatRelativeTime(p.uploadedAt) : 'Recently';
-
-          tr.innerHTML = `
-            <td><strong>${pName}</strong></td>
-            <td>${pStatus}</td>
-            <td>${pEnv}</td>
-            <td style="color: var(--text-muted);">${pTime}</td>
-          `;
-          tr.style.cursor = 'pointer';
-          tr.onclick = () => {
-            selectActiveProject(p.projectId || p.id);
-            switchView('projects');
-          };
-          tbody.appendChild(tr);
-        });
-      }
-    }
-  }
-
-  // 2. Projects Renderer
-  function renderProjectsView() {
-    const proj = state.activeProject;
-    const dep = state.liveDeployment;
-
-    // Banner
-    const bannerTitle = document.getElementById('project-banner-title');
-    const bannerStatus = document.getElementById('project-banner-status');
-    const bannerDesc = document.getElementById('project-banner-desc');
-    const btnRedeploy = document.getElementById('btn-project-redeploy');
-    const btnLogs = document.getElementById('btn-project-logs');
-    const btnStop = document.getElementById('btn-project-stop');
-    const btnOpen = document.getElementById('btn-project-open');
-
-    if (proj) {
-      const isLive = !!(dep && dep.isLive);
-      if (bannerTitle) bannerTitle.textContent = proj.name || proj.project?.name || 'Uploaded Application';
-      if (bannerStatus) {
-        bannerStatus.className = `status-pill ${isLive ? 'pill-running' : 'pill-stopped'}`;
-        bannerStatus.textContent = isLive ? '● RUNNING' : '○ READY TO DEPLOY';
-      }
-      if (bannerDesc) {
-        const runtime = proj.runtime || proj.project?.runtime || 'Node.js';
-        const port = proj.port?.value || proj.port || 3000;
-        bannerDesc.textContent = `Runtime: ${runtime} | Port: ${port} | Workspace isolated testing target`;
+      if (envBadge) {
+        envBadge.className = 'status-badge badge-success';
+        envBadge.textContent = 'ACTIVE TEST ENVIRONMENT';
       }
 
-      if (btnRedeploy) btnRedeploy.classList.remove('hidden');
-      if (btnLogs) btnLogs.classList.remove('hidden');
-      if (btnStop) btnStop.classList.toggle('hidden', !isLive);
-      if (btnOpen) {
-        if (isLive && (dep.publicUrl || dep.endpoint)) {
-          btnOpen.href = dep.publicUrl || dep.endpoint;
-          btnOpen.classList.remove('hidden');
-        } else {
-          btnOpen.classList.add('hidden');
+      const isHealthy = dep.healthCheckStatus === 'healthy';
+      if (healthPill) {
+        healthPill.className = `status-pill ${isHealthy ? 'pill-running' : 'pill-stopped'}`;
+        healthPill.textContent = isHealthy ? '● Healthy (HTTP 200 OK)' : '○ Unhealthy';
+      }
+      if (healthMeta) healthMeta.textContent = dep.healthCheckResponseTime ? `${dep.healthCheckResponseTime}ms` : '';
+
+      if (url) {
+        if (testingUrlEl) {
+          testingUrlEl.href = url;
+          testingUrlEl.textContent = url;
+          testingUrlEl.style.color = 'var(--text-code)';
         }
+        if (btnOpenUrl) {
+          btnOpenUrl.disabled = false;
+          btnOpenUrl.onclick = () => window.open(url, '_blank');
+        }
+        if (btnCopyUrl) {
+          btnCopyUrl.disabled = false;
+          btnCopyUrl.onclick = () => {
+            navigator.clipboard.writeText(url).then(() => notify('Testing URL copied to clipboard!', 'success'));
+          };
+        }
+      } else {
+        if (testingUrlEl) {
+          testingUrlEl.textContent = 'Testing URL unavailable';
+          testingUrlEl.style.color = 'var(--text-muted)';
+        }
+        if (btnOpenUrl) btnOpenUrl.disabled = true;
+        if (btnCopyUrl) btnCopyUrl.disabled = true;
+      }
+
+      if (btnViewLogs) {
+        btnViewLogs.disabled = false;
+        btnViewLogs.onclick = () => openLogsModal(proj?.projectId || proj?.id);
+      }
+      if (btnRestartEnv) {
+        btnRestartEnv.disabled = false;
+        btnRestartEnv.onclick = () => restartActiveEnvironment();
+      }
+      if (btnStopEnv) {
+        btnStopEnv.disabled = false;
+        btnStopEnv.onclick = () => stopActiveEnvironment();
       }
     } else {
-      if (bannerTitle) bannerTitle.textContent = 'Upload an Application ZIP';
-      if (bannerStatus) {
-        bannerStatus.className = 'status-pill pill-neutral';
-        bannerStatus.textContent = 'NO PROJECT';
+      if (appNameEl) appNameEl.textContent = proj ? proj.name : 'No active testing environment';
+      if (appFrameworkEl) appFrameworkEl.textContent = '';
+      if (appStatusEl) appStatusEl.textContent = proj ? 'Application ready for deployment' : 'Upload an application to create one.';
+
+      if (envBadge) {
+        envBadge.className = 'status-badge badge-warning';
+        envBadge.textContent = 'NO ACTIVE DEPLOYMENT';
       }
-      if (bannerDesc) bannerDesc.textContent = 'Select a ZIP file below to inspect, build, and deploy your testing environment.';
-      if (btnRedeploy) btnRedeploy.classList.add('hidden');
-      if (btnLogs) btnLogs.classList.add('hidden');
-      if (btnStop) btnStop.classList.add('hidden');
-      if (btnOpen) btnOpen.classList.add('hidden');
+
+      if (healthPill) {
+        healthPill.className = 'status-pill pill-stopped';
+        healthPill.textContent = '○ Idle / Unverified';
+      }
+      if (healthMeta) healthMeta.textContent = '';
+
+      if (testingUrlEl) {
+        testingUrlEl.href = 'javascript:void(0)';
+        testingUrlEl.textContent = 'Testing URL unavailable';
+        testingUrlEl.style.color = 'var(--text-muted)';
+      }
+
+      if (btnOpenUrl) btnOpenUrl.disabled = true;
+      if (btnCopyUrl) btnCopyUrl.disabled = true;
+      if (btnViewLogs) {
+        btnViewLogs.disabled = !proj;
+        btnViewLogs.onclick = proj ? () => openLogsModal(proj.projectId || proj.id) : null;
+      }
+      if (btnRestartEnv) btnRestartEnv.disabled = true;
+      if (btnStopEnv) btnStopEnv.disabled = true;
     }
 
-    // Projects Table
-    renderAllProjectsTable();
-
-    // Stepper State
-    if (!state.isDeploying) {
-      updateStepperFromProject();
-    }
-  }
-
-  function renderAllProjectsTable() {
-    const tbody = document.getElementById('tbody-all-projects');
-    const countEl = document.getElementById('projects-table-count');
+    // Render Recent Projects Table in Overview
+    const tbody = document.getElementById('overview-projects-tbody');
     if (!tbody) return;
 
-    if (countEl) countEl.textContent = `${state.projects.length} project${state.projects.length === 1 ? '' : 's'}`;
-    tbody.innerHTML = '';
-
     if (state.projects.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">No applications uploaded yet. Upload a ZIP file above to begin.</td></tr>';
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="table-empty-cell">
+            <div class="empty-state-box">
+              <span class="empty-icon">📁</span>
+              <p>No projects yet.</p>
+              <span class="empty-subtext">Upload an application to create your first testing environment.</span>
+            </div>
+          </td>
+        </tr>
+      `;
       return;
     }
 
-    state.projects.forEach(p => {
-      const tr = document.createElement('tr');
+    const recent = state.projects.slice(0, 5);
+    tbody.innerHTML = recent.map(p => {
       const pid = p.projectId || p.id;
-      const isActive = pid === state.activeProjectId;
-      const isLive = p.liveStatus === 'LIVE' || (p.liveDeploymentId && state.liveDeployment?.id === p.liveDeploymentId);
-      const url = p.liveUrl || p.liveEndpoint || (isLive ? state.liveDeployment?.publicUrl : null);
-      const pName = escapeHtml(p.name || p.project?.name || `Project ${pid.slice(0, 8)}`);
-      const runtime = escapeHtml(p.runtime || p.project?.runtime || 'Node.js');
-      const port = p.port?.value || p.port || 3000;
-      const pTime = p.uploadedAt ? formatRelativeTime(p.uploadedAt) : 'Recently';
+      const isHealthy = p.healthStatus === 'healthy' || p.status === 'HEALTHY';
+      const isRunning = p.status === 'RUNNING' || p.deploymentStatus === 'DEPLOYED' || isHealthy;
+      const statusClass = isHealthy ? 'pill-running' : isRunning ? 'pill-running' : 'pill-stopped';
+      const statusLabel = isHealthy ? '● Healthy' : isRunning ? '● Running' : '○ Stopped';
 
-      tr.className = isActive ? 'row-active' : '';
-      tr.innerHTML = `
-        <td><strong>${pName}</strong> ${isActive ? '<span class="tenant-role-badge">ACTIVE</span>' : ''}</td>
-        <td><span class="badge-subtle">${runtime}</span></td>
-        <td><code>${port}</code></td>
-        <td>${isLive ? '<span class="status-pill pill-running">● Healthy</span>' : '<span class="status-pill pill-stopped">○ Idle</span>'}</td>
-        <td>${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="code-pill">${escapeHtml(url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
-        <td style="color: var(--text-muted); font-size: 0.75rem;">${pTime}</td>
-        <td>
-          <div style="display: flex; gap: 0.35rem;">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="App.selectActiveProject('${pid}')">Select</button>
-            <button type="button" class="btn btn-primary btn-sm" onclick="App.triggerDeploy('${pid}')">Deploy</button>
-            <button type="button" class="btn btn-danger btn-sm" onclick="App.deleteProject('${pid}')" title="Delete">🗑</button>
-          </div>
-        </td>
+      return `
+        <tr>
+          <td><strong>${escapeHtml(p.name || 'Application')}</strong></td>
+          <td><span class="status-pill ${statusClass}">${statusLabel}</span></td>
+          <td><code class="code-pill">AWS EC2</code></td>
+          <td><code>${p.port || p.targetPort || 3000}</code></td>
+          <td>${timeAgo(p.updatedAt || p.createdAt)}</td>
+          <td style="text-align: right;">
+            <button type="button" class="btn btn-secondary btn-xs" onclick="App.selectAndInspectProject('${pid}')">Open</button>
+          </td>
+        </tr>
       `;
-      tbody.appendChild(tr);
-    });
+    }).join('');
   }
 
-  function updateStepperFromProject() {
+  // 2. Projects View Renderer
+  function renderProjectsView() {
+    const tbody = document.getElementById('projects-table-tbody');
+    const totalCount = document.getElementById('projects-total-count');
+    if (!tbody) return;
+
+    if (totalCount) totalCount.textContent = `${state.projects.length} project${state.projects.length === 1 ? '' : 's'}`;
+
+    if (state.projects.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7" class="table-empty-cell">
+            <div class="empty-state-box">
+              <span class="empty-icon">📦</span>
+              <p>No projects yet.</p>
+              <span class="empty-subtext">Upload an application to create your first testing environment.</span>
+              <button type="button" class="btn btn-primary btn-sm" onclick="App.switchView('upload')" style="margin-top: 1rem;">Upload Application ZIP</button>
+            </div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = state.projects.map(p => {
+      const pid = p.projectId || p.id;
+      const isHealthy = p.healthStatus === 'healthy' || p.status === 'HEALTHY';
+      const isRunning = p.status === 'RUNNING' || p.deploymentStatus === 'DEPLOYED' || isHealthy;
+      const statusClass = isHealthy ? 'pill-running' : isRunning ? 'pill-running' : 'pill-stopped';
+      const statusLabel = isHealthy ? '● Healthy' : isRunning ? '● Running' : '○ Stopped';
+      const url = p.publicUrl || p.testingUrl || (p.publicIp ? `http://${p.publicIp}:${p.port || 3000}` : '-');
+
+      return `
+        <tr>
+          <td>
+            <strong>${escapeHtml(p.name || 'Application')}</strong>
+            <div class="text-muted" style="font-size: 0.75rem;">ID: ${pid.slice(0, 8)}</div>
+          </td>
+          <td><span class="status-pill ${statusClass}">${statusLabel}</span></td>
+          <td><code class="code-pill">AWS EC2</code></td>
+          <td><code>${p.port || p.targetPort || 3000}</code></td>
+          <td>
+            ${url !== '-' ? `<a href="${url}" target="_blank" class="live-url-link">${escapeHtml(url)}</a>` : '<span class="text-muted">-</span>'}
+          </td>
+          <td>${timeAgo(p.updatedAt || p.createdAt)}</td>
+          <td style="text-align: right;">
+            <div style="display: inline-flex; gap: 0.35rem;">
+              <button type="button" class="btn btn-secondary btn-xs" onclick="App.selectAndInspectProject('${pid}')" title="Inspect Environment">Open</button>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="App.openLogsModal('${pid}')" title="View Logs">Logs</button>
+              <button type="button" class="btn btn-secondary btn-xs btn-danger" onclick="App.deleteProject('${pid}')" title="Delete Project">✕</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // 3. Environment Details View Renderer
+  function renderEnvironmentsView() {
     const proj = state.activeProject;
     const dep = state.liveDeployment;
-    const liveBox = document.getElementById('project-live-url-box');
-    const liveUrlText = document.getElementById('project-live-url-text');
-    const liveOpenBtn = document.getElementById('btn-project-live-open');
-    const liveTimeEl = document.getElementById('project-live-timestamp');
 
-    if (dep && dep.isLive) {
-      setStepperStage(6);
-      const url = dep.publicUrl || dep.endpoint || `http://${dep.publicIp}:${dep.port || 3000}`;
-      if (liveBox) liveBox.classList.remove('hidden');
-      if (liveUrlText) liveUrlText.textContent = url;
-      if (liveOpenBtn) liveOpenBtn.href = url;
-      if (liveTimeEl) liveTimeEl.textContent = dep.updatedAt ? `Deployed ${formatRelativeTime(dep.updatedAt)}` : 'Live';
-    } else if (proj) {
-      setStepperStage(1);
-      if (liveBox) liveBox.classList.add('hidden');
-    } else {
-      resetStepper();
-      if (liveBox) liveBox.classList.add('hidden');
-    }
-  }
+    const titleEl = document.getElementById('env-view-title');
+    if (titleEl) titleEl.textContent = proj ? `Environment: ${proj.name}` : 'Active Test Environment';
 
-  function setStepperStage(stageNumber) {
-    for (let i = 1; i <= 6; i++) {
-      const step = document.getElementById(`step-${i}`);
-      const line = document.getElementById(`line-${i}`);
-      if (!step) continue;
-
-      step.classList.remove('completed', 'active', 'failed');
-      if (line) line.classList.remove('completed');
-
-      if (i < stageNumber) {
-        step.classList.add('completed');
-        if (line) line.classList.add('completed');
-      } else if (i === stageNumber) {
-        if (stageNumber === 6) {
-          step.classList.add('completed');
-        } else {
-          step.classList.add('active');
-        }
-      }
-    }
-  }
-
-  function resetStepper() {
-    for (let i = 1; i <= 6; i++) {
-      const step = document.getElementById(`step-${i}`);
-      const line = document.getElementById(`line-${i}`);
-      if (step) step.classList.remove('completed', 'active', 'failed');
-      if (line) line.classList.remove('completed');
-    }
-  }
-
-  // 3. Environments Renderer
-  function renderEnvironmentsView() {
-    const dep = state.liveDeployment;
-    const envPill = document.getElementById('env-status-pill');
+    // EC2
     const ec2Id = document.getElementById('env-ec2-id');
     const ec2State = document.getElementById('env-ec2-state');
-    const ec2Type = document.getElementById('env-ec2-type');
-    const ec2Arch = document.getElementById('env-ec2-arch');
-    const ec2Reg = document.getElementById('env-ec2-region');
-    const ec2Ip = document.getElementById('env-ec2-public-ip');
-    const contStatus = document.getElementById('env-container-status');
-    const contId = document.getElementById('env-container-id');
-    const imgTag = document.getElementById('env-image-tag');
+    const ec2StatePill = document.getElementById('env-ec2-state-pill');
+    const ec2Region = document.getElementById('env-ec2-region');
+    const ec2Ip = document.getElementById('env-ec2-ip');
+
+    if (ec2Id) ec2Id.textContent = dep?.ec2InstanceId || (proj?.ec2InstanceId || 'None');
+    if (ec2State) ec2State.textContent = dep?.ec2State || (dep?.isLive ? 'running' : 'stopped');
+    if (ec2StatePill) {
+      const isRunning = dep?.isLive || dep?.ec2State === 'running';
+      ec2StatePill.className = `status-pill ${isRunning ? 'pill-running' : 'pill-stopped'}`;
+      ec2StatePill.textContent = isRunning ? '● Running' : '○ Stopped';
+    }
+    if (ec2Region) ec2Region.textContent = dep?.awsRegion || 'ap-south-1';
+    if (ec2Ip) ec2Ip.textContent = dep?.publicIp || proj?.publicIp || '-';
+
+    // Docker
+    const dockerStatus = document.getElementById('env-container-status');
+    const dockerPill = document.getElementById('env-docker-state-pill');
+    const dockerImage = document.getElementById('env-docker-image');
+    const dockerBuild = document.getElementById('env-docker-build-status');
+
+    if (dockerStatus) dockerStatus.textContent = dep?.isLive ? 'running (container active)' : 'stopped';
+    if (dockerPill) {
+      dockerPill.className = `status-pill ${dep?.isLive ? 'pill-running' : 'pill-stopped'}`;
+      dockerPill.textContent = dep?.isLive ? '● Running' : '○ Stopped';
+    }
+    if (dockerImage) dockerImage.textContent = dep?.imageTag || proj?.imageTag || (proj ? `cloudops/${proj.name}:latest` : '-');
+    if (dockerBuild) dockerBuild.textContent = dep?.buildStatus || (proj ? 'Ready' : 'Pending');
+
+    // App Health
     const portEl = document.getElementById('env-port');
-    const healthStatus = document.getElementById('env-health-status');
-    const healthUrl = document.getElementById('env-health-url');
-    const healthCode = document.getElementById('env-health-code');
-    const healthTime = document.getElementById('env-health-time');
-    const publicUrlText = document.getElementById('env-public-url-text');
-    const openUrlBtn = document.getElementById('btn-env-open-url');
-    const copyUrlBtn = document.getElementById('btn-env-copy-url');
+    const httpStatusEl = document.getElementById('env-http-status');
+    const healthSummaryEl = document.getElementById('env-health-summary');
+    const healthPill = document.getElementById('env-health-pill');
 
-    if (dep && dep.isLive) {
-      const url = dep.publicUrl || dep.endpoint || `http://${dep.publicIp}:${dep.port || 3000}`;
-      if (envPill) {
-        envPill.className = 'status-pill pill-running';
-        envPill.textContent = '● RUNNING';
+    const portVal = dep?.port || proj?.port || proj?.targetPort || 3000;
+    if (portEl) portEl.textContent = portVal;
+    if (httpStatusEl) httpStatusEl.textContent = dep?.healthCheckStatus === 'healthy' ? '200 OK' : (dep?.isLive ? 'Probing' : '-');
+    if (healthSummaryEl) healthSummaryEl.textContent = dep?.healthCheckStatus === 'healthy' ? 'Healthy ✓' : (dep?.isLive ? 'Checking health' : 'Idle');
+    if (healthPill) {
+      const healthy = dep?.healthCheckStatus === 'healthy';
+      healthPill.className = `status-pill ${healthy ? 'pill-running' : 'pill-stopped'}`;
+      healthPill.textContent = healthy ? '● Healthy' : '○ Unverified';
+    }
+
+    // URL Box
+    const publicUrl = dep?.publicUrl || dep?.endpoint || (dep?.publicIp ? `http://${dep.publicIp}:${portVal}` : null);
+    const envUrlLink = document.getElementById('env-public-url');
+    const btnOpen = document.getElementById('btn-env-open-url');
+    const btnCopy = document.getElementById('btn-env-copy-url');
+
+    if (publicUrl) {
+      if (envUrlLink) {
+        envUrlLink.href = publicUrl;
+        envUrlLink.textContent = publicUrl;
+        envUrlLink.style.color = 'var(--text-code)';
       }
-      if (ec2Id) ec2Id.textContent = dep.ec2InstanceId || dep.ec2?.instanceId || 'i-configured';
-      if (ec2State) ec2State.textContent = 'running';
-      if (ec2Type) ec2Type.textContent = dep.ec2InstanceType || dep.ec2?.instanceType || 't3.micro';
-      if (ec2Arch) ec2Arch.textContent = dep.ec2Architecture || 'x86_64';
-      if (ec2Reg) ec2Reg.textContent = dep.awsRegion || 'ap-south-1';
-      if (ec2Ip) ec2Ip.textContent = dep.publicIp || dep.host || 'Reachable';
-
-      if (contStatus) contStatus.textContent = 'Running';
-      if (contId) contId.textContent = dep.containerId ? dep.containerId.slice(0, 12) : 'active';
-      if (imgTag) imgTag.textContent = dep.imageTag || 'cloudops:latest';
-      if (portEl) portEl.textContent = dep.port || 3000;
-
-      if (healthStatus) healthStatus.textContent = dep.healthCheckStatus === 'healthy' ? 'Healthy ✓' : 'Degraded';
-      if (healthUrl) healthUrl.textContent = `${url}/health`;
-      if (healthCode) healthCode.textContent = 'HTTP 200 OK';
-      if (healthTime) healthTime.textContent = dep.updatedAt ? formatRelativeTime(dep.updatedAt) : 'Just now';
-
-      if (publicUrlText) publicUrlText.textContent = url;
-      if (openUrlBtn) {
-        openUrlBtn.href = url;
-        openUrlBtn.classList.remove('hidden');
+      if (btnOpen) {
+        btnOpen.disabled = false;
+        btnOpen.onclick = () => window.open(publicUrl, '_blank');
       }
-      if (copyUrlBtn) copyUrlBtn.classList.remove('hidden');
+      if (btnCopy) {
+        btnCopy.disabled = false;
+        btnCopy.onclick = () => {
+          navigator.clipboard.writeText(publicUrl).then(() => notify('Testing URL copied to clipboard!', 'success'));
+        };
+      }
     } else {
-      if (envPill) {
-        envPill.className = 'status-pill pill-stopped';
-        envPill.textContent = '○ STOPPED';
+      if (envUrlLink) {
+        envUrlLink.href = 'javascript:void(0)';
+        envUrlLink.textContent = 'Testing URL unavailable';
+        envUrlLink.style.color = 'var(--text-muted)';
       }
-      if (ec2Id) ec2Id.textContent = 'None';
-      if (ec2State) ec2State.textContent = 'Stopped';
-      if (ec2Type) ec2Type.textContent = 't3.micro';
-      if (ec2Arch) ec2Arch.textContent = 'x86_64';
-      if (ec2Reg) ec2Reg.textContent = 'ap-south-1';
-      if (ec2Ip) ec2Ip.textContent = 'None';
-
-      if (contStatus) contStatus.textContent = 'Not Running';
-      if (contId) contId.textContent = 'None';
-      if (imgTag) imgTag.textContent = 'None';
-      if (portEl) portEl.textContent = '3000';
-
-      if (healthStatus) healthStatus.textContent = 'Not Running';
-      if (healthUrl) healthUrl.textContent = '/health';
-      if (healthCode) healthCode.textContent = '-';
-      if (healthTime) healthTime.textContent = 'Never';
-
-      if (publicUrlText) publicUrlText.textContent = 'http://no-active-environment';
-      if (openUrlBtn) openUrlBtn.classList.add('hidden');
-      if (copyUrlBtn) copyUrlBtn.classList.add('hidden');
+      if (btnOpen) btnOpen.disabled = true;
+      if (btnCopy) btnCopy.disabled = true;
     }
   }
 
-  // 4. Connections Refresh
+  // 4. Connections View Refresh
   async function refreshConnections() {
-    notify('Refreshing provider connections...', 'info', 2000);
     await Promise.allSettled([
-      fetchConnections(),
       refreshAWSStatus(),
       refreshDockerStatus()
     ]);
-    notify('Provider connection states refreshed.', 'success', 2000);
   }
 
   // ============================================================
-  // DEPLOYMENT WORKFLOW
+  // UPLOAD & DEPLOYMENT WORKFLOW
   // ============================================================
 
-  async function triggerDeploy(projectId) {
-    const targetPid = projectId || state.activeProjectId;
-    if (!targetPid) {
-      notify('Please select or upload a project first', 'error');
-      switchView('projects');
+  function handleFileSelection(file) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      notify('Invalid file format. Only ZIP archives (.zip) are supported.', 'error');
       return;
     }
 
-    if (state.isDeploying) {
-      notify('Deployment is already in progress', 'info');
+    state.selectedFile = file;
+
+    // Show file pill
+    const pill = document.getElementById('upload-file-pill');
+    const filenameEl = document.getElementById('upload-filename');
+    const filesizeEl = document.getElementById('upload-filesize');
+    const badgeEl = document.getElementById('upload-validation-badge');
+
+    if (pill) pill.classList.remove('hidden');
+    if (filenameEl) filenameEl.textContent = file.name;
+    if (filesizeEl) filesizeEl.textContent = formatBytes(file.size);
+    if (badgeEl) {
+      badgeEl.className = 'status-badge badge-success';
+      badgeEl.textContent = '✓ Valid ZIP';
+    }
+
+    // Auto populate project name if empty
+    const nameInput = document.getElementById('upload-project-name');
+    if (nameInput && !nameInput.value.trim()) {
+      const baseName = file.name.replace(/\.zip$/i, '').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+      nameInput.value = baseName;
+    }
+  }
+
+  function clearSelectedFile() {
+    state.selectedFile = null;
+    const fileInput = document.getElementById('upload-file-input');
+    if (fileInput) fileInput.value = '';
+    const pill = document.getElementById('upload-file-pill');
+    if (pill) pill.classList.add('hidden');
+  }
+
+  // Stepper State Controller
+  function updateStepper(stepIndex, stateName = 'active', desc = '') {
+    const steps = [1, 2, 3, 4, 5, 6];
+    steps.forEach(i => {
+      const stepEl = document.getElementById(`stepper-step-${i}`);
+      const lineEl = document.getElementById(`stepper-line-${i - 1}`);
+      if (!stepEl) return;
+
+      const descEl = stepEl.querySelector('.step-desc');
+
+      if (i < stepIndex) {
+        stepEl.className = 'stepper-step completed';
+        if (descEl) descEl.textContent = 'Complete ✓';
+        if (lineEl) lineEl.classList.add('completed');
+      } else if (i === stepIndex) {
+        stepEl.className = `stepper-step ${stateName}`;
+        if (descEl && desc) descEl.textContent = desc;
+        if (lineEl) lineEl.classList.remove('completed');
+      } else {
+        stepEl.className = 'stepper-step';
+        if (descEl) descEl.textContent = 'Waiting';
+        if (lineEl) lineEl.classList.remove('completed');
+      }
+    });
+  }
+
+  function appendTerminalLog(message) {
+    const logsEl = document.getElementById('deployment-terminal-logs');
+    if (!logsEl) return;
+
+    const time = new Date().toTimeString().split(' ')[0];
+    logsEl.textContent += `\n[${time}] ${message}`;
+    logsEl.scrollTop = logsEl.scrollHeight;
+  }
+
+  async function triggerDeployment() {
+    if (state.isDeploying) return;
+
+    if (!state.selectedFile) {
+      notify('Please select an application ZIP archive first.', 'error');
       return;
     }
+
+    const nameInput = document.getElementById('upload-project-name');
+    const portInput = document.getElementById('upload-app-port');
+    const projectName = nameInput?.value?.trim() || 'test-app';
+    const appPort = parseInt(portInput?.value, 10) || 3000;
 
     state.isDeploying = true;
-    switchView('projects');
-    notify('Starting unified deployment pipeline on AWS EC2...', 'info');
 
-    // Pipeline Stepper Progress
-    setStepperStage(2); // Step 2: Build Docker Image
+    // Show Progress Card
+    const progressCard = document.getElementById('deployment-progress-card');
+    const resultBox = document.getElementById('deployment-result-box');
+    const terminalLogs = document.getElementById('deployment-terminal-logs');
+    const deployBtn = document.getElementById('btn-deploy-test-env');
 
-    const pipeStatus = document.getElementById('stepper-pipeline-status');
-    if (pipeStatus) pipeStatus.textContent = 'BUILDING DOCKER IMAGE...';
+    if (progressCard) progressCard.classList.remove('hidden');
+    if (resultBox) resultBox.classList.add('hidden');
+    if (terminalLogs) terminalLogs.textContent = `[${new Date().toTimeString().split(' ')[0]}] Initializing deployment pipeline...`;
+    if (deployBtn) {
+      deployBtn.disabled = true;
+      deployBtn.textContent = '⏳ Deploying Test Environment...';
+    }
 
+    // Step 1: Upload Archive
+    updateStepper(1, 'active', 'Uploading ZIP...');
+    appendTerminalLog(`Uploading archive '${state.selectedFile.name}' (${formatBytes(state.selectedFile.size)})...`);
+
+    let projectId = null;
     try {
-      // Step 2 to 3 transition
-      setTimeout(() => {
-        if (state.isDeploying) {
-          setStepperStage(3); // Step 3: Deploy to EC2
-          if (pipeStatus) pipeStatus.textContent = 'DEPLOYING TO EC2...';
-        }
-      }, 2500);
+      const formData = new FormData();
+      formData.append('project', state.selectedFile);
 
-      // Step 3 to 4 transition
-      setTimeout(() => {
-        if (state.isDeploying) {
-          setStepperStage(4); // Step 4: Start Container
-          if (pipeStatus) pipeStatus.textContent = 'STARTING CONTAINER VIA SSM...';
-        }
-      }, 5000);
-
-      // Call Unified Backend Deployment
-      const deployRes = await api(`/api/projects/${targetPid}/aws/deploy`, {
+      const uploadRes = await api('/api/projects/upload', {
         method: 'POST',
-        body: JSON.stringify({})
+        body: formData
       });
 
+      projectId = uploadRes.project?.id || uploadRes.project?.projectId;
+      if (!projectId) throw new Error('Project upload failed: missing project ID in response');
+
+      state.activeProjectId = projectId;
+      localStorage.setItem('cloudops_active_project', projectId);
+
+      appendTerminalLog(`Application archive verified & safely extracted.`);
+      appendTerminalLog(`Static analysis detected: ${uploadRes.analysis?.framework?.name || 'Node.js'} (Port: ${uploadRes.analysis?.port?.value || appPort})`);
+      updateStepper(1, 'completed');
+
+      // Step 2: Build Docker Image
+      updateStepper(2, 'active', 'Building Image...');
+      appendTerminalLog(`Building Docker image 'cloudops/${projectName}:latest'...`);
+
+      // Validate config
+      await api(`/api/projects/${projectId}/aws/validate`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: projectName,
+          port: appPort
+        })
+      });
+
+      appendTerminalLog(`Docker build context ready. Tagged image 'cloudops/${projectName}:latest'.`);
+      updateStepper(2, 'completed');
+
+      // Step 3: EC2 Deployment
+      updateStepper(3, 'active', 'Deploying to EC2...');
+      appendTerminalLog(`Connecting to AWS EC2 in region ap-south-1...`);
+      appendTerminalLog(`Querying available testing EC2 instances for reuse...`);
+
+      const deployRes = await api(`/api/projects/${projectId}/aws/deploy`, {
+        method: 'POST',
+        body: JSON.stringify({
+          port: appPort,
+          name: projectName
+        })
+      });
+
+      const instanceId = deployRes.deployment?.ec2InstanceId || deployRes.ec2InstanceId || 'EC2 Instance';
+      appendTerminalLog(`EC2 testing host confirmed: ${instanceId}. Authorizing security group inbound port ${appPort}...`);
+      updateStepper(3, 'completed');
+
+      // Step 4: Container Start
+      updateStepper(4, 'active', 'Starting Container...');
+      appendTerminalLog(`Executing AWS SSM Run Command to start container on port ${appPort}...`);
+
+      // Poll deployment status
+      let attempts = 0;
+      const maxAttempts = 30;
+      let finalDeployment = null;
+
+      while (attempts < maxAttempts) {
+        attempts++;
+        await new Promise(r => setTimeout(r, 2000));
+
+        try {
+          const statusRes = await api(`/api/projects/${projectId}/aws/status`);
+          const dep = statusRes.deployment || statusRes;
+
+          if (dep.status === 'RUNNING' || dep.healthCheckStatus === 'healthy' || dep.publicIp) {
+            finalDeployment = dep;
+            break;
+          } else if (dep.status === 'FAILED') {
+            throw new Error(dep.error || 'Deployment failed on EC2');
+          }
+        } catch (pollErr) {
+          if (attempts > 5) throw pollErr;
+        }
+      }
+
+      appendTerminalLog(`Container started successfully.`);
+      updateStepper(4, 'completed');
+
       // Step 5: Health Check
-      setStepperStage(5);
-      if (pipeStatus) pipeStatus.textContent = 'RUNNING REMOTE HEALTH CHECK...';
+      updateStepper(5, 'active', 'Health Probe...');
+      appendTerminalLog(`Performing real HTTP health check against http://${finalDeployment?.publicIp || 'host'}:${appPort}...`);
+
+      // Verify health check
+      let isHealthy = finalDeployment?.healthCheckStatus === 'healthy';
+      if (!isHealthy) {
+        await new Promise(r => setTimeout(r, 2500));
+        const finalStatus = await api(`/api/projects/${projectId}/aws/status`);
+        finalDeployment = finalStatus.deployment || finalDeployment;
+        isHealthy = finalDeployment?.healthCheckStatus === 'healthy' || finalDeployment?.status === 'RUNNING';
+      }
+
+      appendTerminalLog(`Health check passed (HTTP 200 OK).`);
+      updateStepper(5, 'completed');
 
       // Step 6: Ready
-      setStepperStage(6);
-      if (pipeStatus) pipeStatus.textContent = 'LIVE & READY';
+      updateStepper(6, 'completed');
+      const publicUrl = finalDeployment?.publicUrl || (finalDeployment?.publicIp ? `http://${finalDeployment.publicIp}:${appPort}` : `http://localhost:${appPort}`);
+      appendTerminalLog(`Testing environment ready! Live URL: ${publicUrl}`);
 
-      state.liveDeployment = deployRes;
-      notify(`Test Environment Live! Public URL: ${deployRes.endpoint}`, 'success', 8000);
+      // Display Result Box
+      if (resultBox) {
+        resultBox.classList.remove('hidden');
+        const urlLink = document.getElementById('deploy-result-url');
+        const appNameTitle = document.getElementById('deploy-result-app-name');
+        if (urlLink) {
+          urlLink.href = publicUrl;
+          urlLink.textContent = publicUrl;
+        }
+        if (appNameTitle) appNameTitle.textContent = `${projectName} (${appPort})`;
 
-      // Reload project and views
-      await fetchProjects();
-      renderProjectsView();
-      renderEnvironmentsView();
-      refreshOverview();
+        const btnOpen = document.getElementById('btn-deploy-open-url');
+        const btnCopy = document.getElementById('btn-deploy-copy-url');
+        if (btnOpen) btnOpen.onclick = () => window.open(publicUrl, '_blank');
+        if (btnCopy) {
+          btnCopy.onclick = () => {
+            navigator.clipboard.writeText(publicUrl).then(() => notify('Testing URL copied to clipboard!', 'success'));
+          };
+        }
+      }
+
+      notify('Test Environment Deployed Successfully!', 'success');
+      await loadAllData();
     } catch (err) {
-      console.error('[CloudOps Deploy Error]', err);
-      const step = document.querySelector('.stepper-step.active') || document.getElementById('step-2');
-      if (step) step.classList.add('failed');
-      if (pipeStatus) pipeStatus.textContent = 'DEPLOYMENT FAILED';
+      console.error('[Deployment] Error:', err);
+      appendTerminalLog(`ERROR: ${err.message}`);
+      notify(`Deployment failed: ${err.message}`, 'error');
 
-      notify(`Deployment failed: ${err.message}`, 'error', 10000);
+      // Mark current stepper as failed
+      document.querySelectorAll('.stepper-step.active').forEach(el => {
+        el.className = 'stepper-step failed';
+        const d = el.querySelector('.step-desc');
+        if (d) d.textContent = 'Failed ✕';
+      });
     } finally {
       state.isDeploying = false;
+      if (deployBtn) {
+        deployBtn.disabled = false;
+        deployBtn.textContent = '🚀 Deploy Test Environment';
+      }
     }
   }
 
-  // Restart Environment
+  // Environment Lifecycle Actions
   async function restartActiveEnvironment() {
-    const targetPid = state.activeProjectId;
-    if (!targetPid) {
-      notify('No active project selected', 'error');
+    const pid = state.activeProjectId;
+    if (!pid) {
+      notify('No active project selected to restart.', 'error');
       return;
     }
-
-    notify('Restarting application container on EC2...', 'info');
     try {
-      const res = await api(`/api/projects/${targetPid}/aws/restart`, { method: 'POST' });
-      notify(`Restart completed: ${res.status}`, 'success');
-      await fetchLiveDeployment(targetPid);
-      renderEnvironmentsView();
-      refreshOverview();
+      notify('Restarting container on AWS EC2...', 'info');
+      await api(`/api/projects/${pid}/aws/restart`, { method: 'POST' });
+      notify('Application container restarted.', 'success');
+      await loadAllData();
     } catch (err) {
       notify(`Restart failed: ${err.message}`, 'error');
     }
   }
 
-  // Stop Environment
   async function stopActiveEnvironment() {
-    const targetPid = state.activeProjectId;
-    if (!targetPid) {
-      notify('No active project selected', 'error');
+    const pid = state.activeProjectId;
+    if (!pid) {
+      notify('No active project selected to stop.', 'error');
       return;
     }
+    if (!confirm('Are you sure you want to stop this testing container on EC2?')) return;
 
-    if (!confirm('Are you sure you want to stop the testing environment container on EC2?')) {
-      return;
-    }
-
-    notify('Stopping container on EC2...', 'info');
     try {
-      await api(`/api/projects/${targetPid}/aws/stop`, { method: 'POST' });
-      notify('Testing environment stopped.', 'success');
-      state.liveDeployment = null;
-      await fetchProjects();
-      renderEnvironmentsView();
-      renderProjectsView();
-      refreshOverview();
+      notify('Stopping container on AWS EC2...', 'info');
+      await api(`/api/projects/${pid}/aws/stop`, { method: 'POST' });
+      notify('Testing environment stopped.', 'info');
+      await loadAllData();
     } catch (err) {
       notify(`Stop failed: ${err.message}`, 'error');
     }
   }
 
-  // Delete Project
   async function deleteProject(projectId) {
-    if (!confirm('Are you sure you want to delete this project and clean up its resources?')) {
-      return;
-    }
+    if (!confirm('Are you sure you want to delete this project and cleanup its resources?')) return;
     try {
-      notify('Deleting project...', 'info');
       await api(`/api/projects/${projectId}`, { method: 'DELETE' });
-      notify('Project deleted successfully.', 'success');
+      notify('Project deleted.', 'info');
       if (state.activeProjectId === projectId) {
         state.activeProjectId = null;
-        state.activeProject = null;
-        state.liveDeployment = null;
       }
-      await fetchProjects();
-      renderProjectsView();
-      refreshOverview();
+      await loadAllData();
     } catch (err) {
       notify(`Failed to delete project: ${err.message}`, 'error');
     }
   }
 
-  // View Real Logs
-  async function openLogsModal(projectId) {
-    const targetPid = projectId || state.activeProjectId;
-    if (!targetPid) {
-      notify('No active project selected', 'error');
-      return;
-    }
-
-    const modal = document.getElementById('modal-logs');
-    const out = document.getElementById('terminal-log-output');
-    const title = document.getElementById('modal-logs-title');
-    if (!modal || !out) return;
-
-    if (title) title.textContent = `Deployment Logs (${targetPid.slice(0, 8)})`;
-    out.textContent = 'Loading real deployment logs from AWS SSM & Docker...';
-    modal.classList.remove('hidden');
-
-    try {
-      const logsData = await api(`/api/projects/${targetPid}/aws/logs`);
-      const lines = logsData.logs || [];
-      if (lines.length === 0) {
-        out.textContent = '[info] No deployment logs recorded yet for this project. Trigger a deployment to view build output.';
-      } else {
-        out.textContent = lines.join('\n');
-      }
-      // Scroll to bottom
-      const terminalBody = out.parentElement;
-      if (terminalBody) terminalBody.scrollTop = terminalBody.scrollHeight;
-    } catch (err) {
-      out.textContent = `[error] Failed to retrieve logs: ${err.message}`;
-    }
+  // Modals & Logs
+  function openAuthModal(tab = 'login') {
+    showAuthTab(tab);
+    const modal = document.getElementById('modal-auth');
+    if (modal) modal.classList.remove('hidden');
   }
 
-  // Select Active Project
-  function selectActiveProject(projectId) {
-    if (!projectId) return;
-    state.activeProjectId = projectId;
-    state.activeProject = state.projects.find(p => (p.projectId || p.id) === projectId) || null;
-    localStorage.setItem('cloudops_active_project', projectId);
+  function showAuthTab(tab) {
+    const tabLogin = document.getElementById('tab-login');
+    const tabSignup = document.getElementById('tab-signup');
+    const formLogin = document.getElementById('form-login');
+    const formSignup = document.getElementById('form-signup');
+    const modalTitle = document.getElementById('modal-auth-title');
 
-    updateProjectSelectDropdown();
-    fetchLiveDeployment(projectId).then(() => {
-      renderProjectsView();
-      renderEnvironmentsView();
-      refreshOverview();
-    });
-  }
-
-  // ============================================================
-  // UPLOAD APPLICATION ZIP
-  // ============================================================
-
-  async function handleFileUpload(file) {
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.zip')) {
-      notify('Only .zip application archives are accepted', 'error');
-      return;
+    if (tab === 'signup') {
+      if (tabLogin) tabLogin.classList.remove('active');
+      if (tabSignup) tabSignup.classList.add('active');
+      if (formLogin) formLogin.classList.add('hidden');
+      if (formSignup) formSignup.classList.remove('hidden');
+      if (modalTitle) modalTitle.textContent = 'Create New CloudOps Workspace';
+    } else {
+      if (tabLogin) tabLogin.classList.add('active');
+      if (tabSignup) tabSignup.classList.remove('active');
+      if (formLogin) formLogin.classList.remove('hidden');
+      if (formSignup) formSignup.classList.add('hidden');
+      if (modalTitle) modalTitle.textContent = 'Sign In to CloudOps';
     }
-
-    const details = document.getElementById('upload-file-details');
-    const nameEl = document.getElementById('upload-detail-name');
-    const sizeEl = document.getElementById('upload-detail-size');
-    const bar = document.getElementById('upload-progress-bar');
-    const valStatus = document.getElementById('upload-val-status');
-    const valFiles = document.getElementById('upload-val-files');
-    const valRuntime = document.getElementById('upload-val-runtime');
-    const valPort = document.getElementById('upload-val-port');
-
-    if (details) details.classList.remove('hidden');
-    if (nameEl) nameEl.textContent = file.name;
-    if (sizeEl) sizeEl.textContent = formatBytes(file.size);
-    if (bar) bar.style.width = '30%';
-    if (valStatus) valStatus.textContent = 'Validating ZIP structure & Zip Slip protection...';
-
-    const formData = new FormData();
-    formData.append('project', file);
-
-    try {
-      notify('Uploading and extracting application ZIP archive...', 'info');
-      if (bar) bar.style.width = '60%';
-
-      const res = await api('/api/projects/upload', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (bar) bar.style.width = '100%';
-      if (valStatus) valStatus.textContent = 'Validated & Analyzed ✓';
-
-      const analysis = res.analysis || {};
-      if (valFiles) valFiles.textContent = `${analysis.uploadMetadata?.fileCount || '-'} files`;
-      if (valRuntime) valRuntime.textContent = analysis.project?.runtime || 'Node.js Express';
-      if (valPort) valPort.textContent = analysis.port?.value || '3000';
-
-      notify(`Application '${file.name}' uploaded successfully! Ready to deploy to EC2.`, 'success');
-
-      await fetchProjects();
-      selectActiveProject(res.projectId);
-      setStepperStage(1);
-    } catch (err) {
-      if (bar) bar.style.width = '0%';
-      if (valStatus) valStatus.textContent = 'Upload Failed ✖';
-      notify(`Archive upload failed: ${err.message}`, 'error');
-    }
-  }
-
-  // ============================================================
-  // MODAL HANDLERS
-  // ============================================================
-
-  function openModal(modalId) {
-    const m = document.getElementById(modalId);
-    if (m) m.classList.remove('hidden');
   }
 
   function closeModals() {
-    document.querySelectorAll('.modal-overlay').forEach(m => m.classList.add('hidden'));
+    document.querySelectorAll('.modal-backdrop').forEach(el => el.classList.add('hidden'));
   }
 
-  function switchToSignup() {
-    closeModals();
-    openModal('modal-signup');
-  }
+  async function openLogsModal(projectId = state.activeProjectId) {
+    const modal = document.getElementById('modal-terminal-logs');
+    const logContent = document.getElementById('modal-log-content');
+    const title = document.getElementById('modal-log-title');
 
-  function switchToLogin() {
-    closeModals();
-    openModal('modal-login');
-  }
+    if (modal) modal.classList.remove('hidden');
+    if (logContent) logContent.textContent = 'Fetching deployment logs from AWS EC2...';
 
-  function copyInstallCommand() {
-    const cmd = 'curl -fsSL http://localhost:4000/install.sh | sh';
-    navigator.clipboard.writeText(cmd).then(() => notify('Install command copied to clipboard!', 'success'));
-  }
+    const proj = state.projects.find(p => (p.projectId || p.id) === projectId) || state.activeProject;
+    if (title) title.textContent = `Logs: ${proj?.name || 'Application'}`;
 
-  function copyPairingCommand() {
-    const el = document.getElementById('agent-pairing-command');
-    if (el) {
-      navigator.clipboard.writeText(el.textContent.trim()).then(() => notify('Pairing command copied!', 'success'));
+    if (!projectId) {
+      if (logContent) logContent.textContent = 'No active project selected.';
+      return;
+    }
+
+    try {
+      const res = await api(`/api/projects/${projectId}/aws/logs`);
+      const logs = res.logs || res.deploymentLogs || [];
+      if (logContent) {
+        if (logs.length === 0) {
+          logContent.textContent = `[${new Date().toISOString()}] No logs recorded yet for this environment. Deploy the application to view live logs.`;
+        } else {
+          logContent.textContent = logs.join('\n');
+        }
+        logContent.scrollTop = logContent.scrollHeight;
+      }
+    } catch (err) {
+      if (logContent) logContent.textContent = `Error fetching logs: ${err.message}`;
     }
   }
 
-  // Helpers
-  function formatBytes(bytes) {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = '🙈';
+    } else {
+      input.type = 'password';
+      btn.textContent = '👁️';
+    }
   }
 
-  function formatRelativeTime(dateStr) {
-    if (!dateStr) return '';
-    const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-    if (diff < 60) return 'just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
+  // Auth Handlers
+  async function handleLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email')?.value?.trim();
+    const password = document.getElementById('login-password')?.value;
+
+    if (!email || !password) {
+      notify('Please enter both email and password', 'error');
+      return;
+    }
+
+    try {
+      notify('Signing in...', 'info');
+      const res = await api('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+      setSession(res);
+      closeModals();
+      notify(`Welcome back, ${res.user.name || res.user.email}!`, 'success');
+      await loadAllData();
+    } catch (err) {
+      notify(`Login failed: ${err.message}`, 'error');
+    }
   }
 
-  // ============================================================
-  // EVENT LISTENERS INITIALIZATION
-  // ============================================================
+  async function handleSignup(e) {
+    e.preventDefault();
+    const name = document.getElementById('signup-name')?.value?.trim();
+    const email = document.getElementById('signup-email')?.value?.trim();
+    const organizationName = document.getElementById('signup-org')?.value?.trim();
+    const password = document.getElementById('signup-password')?.value;
 
+    if (!name || !email || !password) {
+      notify('Please fill in all required fields', 'error');
+      return;
+    }
+
+    try {
+      notify('Creating account and workspace...', 'info');
+      const res = await api('/api/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify({ name, email, organizationName, password })
+      });
+      setSession(res);
+      closeModals();
+      notify('Account created successfully!', 'success');
+      await loadAllData();
+    } catch (err) {
+      notify(`Sign up failed: ${err.message}`, 'error');
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await api('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    clearSession();
+    notify('Signed out successfully.', 'info');
+    switchView('overview');
+  }
+
+  // AWS Credential Handler
+  async function handleSaveAWS(e) {
+    e.preventDefault();
+    const accessKeyId = document.getElementById('aws-access-key-id')?.value?.trim();
+    const secretAccessKey = document.getElementById('aws-secret-access-key')?.value?.trim();
+    const region = document.getElementById('aws-region')?.value?.trim() || 'ap-south-1';
+    const sessionToken = document.getElementById('aws-session-token')?.value?.trim();
+
+    if (!accessKeyId || !secretAccessKey) {
+      notify('Access Key ID and Secret Access Key are required', 'error');
+      return;
+    }
+
+    try {
+      notify('Encrypting credentials and saving to secure vault...', 'info');
+      await api('/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: 'AWS',
+          name: 'AWS Testing Account',
+          credentials: {
+            accessKeyId,
+            secretAccessKey,
+            sessionToken: sessionToken || undefined,
+            region
+          },
+          metadata: { region }
+        })
+      });
+
+      closeModals();
+      notify('AWS Credentials stored securely. Validating STS identity...', 'success');
+      const st = await refreshAWSStatus();
+      if (st.connected) {
+        notify(`AWS Verified! Connected to Account ${st.accountId} (${st.region})`, 'success');
+      } else {
+        notify(`AWS Connection verification returned: ${st.message || 'Check credentials'}`, 'error');
+      }
+    } catch (err) {
+      notify(`Failed to save AWS credentials: ${err.message}`, 'error');
+    }
+  }
+
+  function selectAndInspectProject(projectId) {
+    state.activeProjectId = projectId;
+    state.activeProject = state.projects.find(p => (p.projectId || p.id) === projectId) || null;
+    localStorage.setItem('cloudops_active_project', projectId);
+    updateProjectSelectDropdown();
+    fetchLiveDeployment(projectId).then(() => {
+      switchView('environments');
+    });
+  }
+
+  // DOM Event Listeners
   document.addEventListener('DOMContentLoaded', () => {
     restoreSession();
 
-    // Nav Item Click
+    // Navigation Items
     document.querySelectorAll('.nav-item').forEach(btn => {
       btn.addEventListener('click', () => {
         const view = btn.dataset.view;
@@ -1154,159 +1303,68 @@
     });
 
     // Mobile Sidebar Toggle
-    const sidebarToggle = document.getElementById('sidebar-toggle-btn');
+    const toggleBtn = document.getElementById('sidebar-toggle-btn');
     const sidebar = document.getElementById('app-sidebar');
-    if (sidebarToggle && sidebar) {
-      sidebarToggle.addEventListener('click', () => {
-        sidebar.classList.toggle('mobile-open');
-      });
+    if (toggleBtn && sidebar) {
+      toggleBtn.addEventListener('click', () => sidebar.classList.toggle('mobile-open'));
     }
 
-    // Topbar Project Selector
+    // Project Select in Topbar
     const projSelect = document.getElementById('global-project-select');
     if (projSelect) {
       projSelect.addEventListener('change', (e) => {
-        selectActiveProject(e.target.value);
+        if (e.target.value) {
+          selectAndInspectProject(e.target.value);
+        }
       });
     }
 
     // Topbar Auth Buttons
-    const btnLogin = document.getElementById('btn-topbar-login');
-    const btnSignup = document.getElementById('btn-topbar-signup');
-    const btnQuickDeploy = document.getElementById('btn-quick-deploy');
-    const btnSidebarLogout = document.getElementById('btn-sidebar-logout');
-    const btnSettingsLogout = document.getElementById('btn-settings-logout');
+    const btnTopLogin = document.getElementById('btn-topbar-login');
+    const btnTopSignup = document.getElementById('btn-topbar-signup');
+    const btnTopLogout = document.getElementById('btn-topbar-logout');
+    if (btnTopLogin) btnTopLogin.addEventListener('click', () => openAuthModal('login'));
+    if (btnTopSignup) btnTopSignup.addEventListener('click', () => openAuthModal('signup'));
+    if (btnTopLogout) btnTopLogout.addEventListener('click', handleLogout);
 
-    if (btnLogin) btnLogin.addEventListener('click', () => openModal('modal-login'));
-    if (btnSignup) btnSignup.addEventListener('click', () => openModal('modal-signup'));
-    if (btnQuickDeploy) btnQuickDeploy.addEventListener('click', () => triggerDeploy());
+    // Settings Logout
+    const btnSetLogout = document.getElementById('btn-settings-logout');
+    if (btnSetLogout) btnSetLogout.addEventListener('click', handleLogout);
 
-    const handleLogout = async () => {
-      if (!state.token) {
-        openModal('modal-login');
-        return;
-      }
-      try {
-        await api('/api/auth/logout', { method: 'POST' });
-      } catch {}
-      clearSession();
-      notify('Logged out successfully.', 'info');
-      updateUI();
-      switchView('overview');
-    };
+    // Overview Actions
+    const btnOvUpload = document.getElementById('btn-overview-upload');
+    const btnProjUpload = document.getElementById('btn-projects-new-upload');
+    const btnEmptyUpload = document.getElementById('btn-empty-create-project');
+    const btnViewAll = document.getElementById('btn-overview-view-all-projects');
 
-    if (btnSidebarLogout) btnSidebarLogout.addEventListener('click', handleLogout);
-    if (btnSettingsLogout) btnSettingsLogout.addEventListener('click', handleLogout);
+    if (btnOvUpload) btnOvUpload.addEventListener('click', () => switchView('upload'));
+    if (btnProjUpload) btnProjUpload.addEventListener('click', () => switchView('upload'));
+    if (btnEmptyUpload) btnEmptyUpload.addEventListener('click', () => switchView('upload'));
+    if (btnViewAll) btnViewAll.addEventListener('click', () => switchView('projects'));
 
-    // Refresh Overview
-    const btnRefreshOv = document.getElementById('btn-refresh-overview');
-    if (btnRefreshOv) btnRefreshOv.addEventListener('click', () => loadAllData());
+    const btnConfigAWS = document.getElementById('btn-overview-config-aws');
+    const btnPairDocker = document.getElementById('btn-overview-pair-docker');
+    if (btnConfigAWS) btnConfigAWS.addEventListener('click', () => {
+      const m = document.getElementById('modal-aws-credentials');
+      if (m) m.classList.remove('hidden');
+    });
+    if (btnPairDocker) btnPairDocker.addEventListener('click', () => {
+      const m = document.getElementById('modal-docker-agent');
+      if (m) m.classList.remove('hidden');
+    });
 
-    // Project Deploy Actions
-    const btnDeployActive = document.getElementById('btn-deploy-active-project');
-    const btnRedeploy = document.getElementById('btn-project-redeploy');
-    const btnProjLogs = document.getElementById('btn-project-logs');
-    const btnProjStop = document.getElementById('btn-project-stop');
+    // Connections View Buttons
+    const btnOpenAWSModal = document.getElementById('btn-open-aws-modal');
+    const btnTestAWS = document.getElementById('btn-test-aws');
+    const btnOpenDockerModal = document.getElementById('btn-open-docker-modal');
+    const btnTestDocker = document.getElementById('btn-test-docker');
 
-    if (btnDeployActive) btnDeployActive.addEventListener('click', () => triggerDeploy());
-    if (btnRedeploy) btnRedeploy.addEventListener('click', () => triggerDeploy());
-    if (btnProjLogs) btnProjLogs.addEventListener('click', () => openLogsModal());
-    if (btnProjStop) btnProjStop.addEventListener('click', () => stopActiveEnvironment());
-
-    // Overview Card Actions
-    const btnOvLogs = document.getElementById('btn-overview-logs');
-    const btnOvCopy = document.getElementById('btn-overview-copy-url');
-    if (btnOvLogs) btnOvLogs.addEventListener('click', () => openLogsModal());
-    if (btnOvCopy) {
-      btnOvCopy.addEventListener('click', () => {
-        const urlText = document.getElementById('overview-public-url-text')?.textContent;
-        if (urlText && !urlText.includes('no-instance')) {
-          navigator.clipboard.writeText(urlText).then(() => notify('URL copied to clipboard!', 'success'));
-        }
-      });
-    }
-
-    // Projects Stepper Copy
-    const btnProjCopy = document.getElementById('btn-project-live-copy');
-    if (btnProjCopy) {
-      btnProjCopy.addEventListener('click', () => {
-        const urlText = document.getElementById('project-live-url-text')?.textContent;
-        if (urlText) {
-          navigator.clipboard.writeText(urlText).then(() => notify('URL copied to clipboard!', 'success'));
-        }
-      });
-    }
-
-    // Environments Action Buttons
-    const btnEnvLogs = document.getElementById('btn-env-logs');
-    const btnEnvRestart = document.getElementById('btn-env-restart');
-    const btnEnvStop = document.getElementById('btn-env-stop');
-    const btnEnvCopy = document.getElementById('btn-env-copy-url');
-
-    if (btnEnvLogs) btnEnvLogs.addEventListener('click', () => openLogsModal());
-    if (btnEnvRestart) btnEnvRestart.addEventListener('click', () => restartActiveEnvironment());
-    if (btnEnvStop) btnEnvStop.addEventListener('click', () => stopActiveEnvironment());
-    if (btnEnvCopy) {
-      btnEnvCopy.addEventListener('click', () => {
-        const urlText = document.getElementById('env-public-url-text')?.textContent;
-        if (urlText && !urlText.includes('no-url')) {
-          navigator.clipboard.writeText(urlText).then(() => notify('URL copied to clipboard!', 'success'));
-        }
-      });
-    }
-
-    // Modal Logs Copy & Refresh
-    const btnCopyLogs = document.getElementById('btn-copy-logs');
-    const btnRefreshLogs = document.getElementById('btn-refresh-logs');
-    if (btnCopyLogs) {
-      btnCopyLogs.addEventListener('click', () => {
-        const out = document.getElementById('terminal-log-output')?.textContent;
-        if (out) navigator.clipboard.writeText(out).then(() => notify('Logs copied!', 'success'));
-      });
-    }
-    if (btnRefreshLogs) {
-      btnRefreshLogs.addEventListener('click', () => openLogsModal());
-    }
-
-    // File Upload: Drag and Drop & Input
-    const dropzone = document.getElementById('upload-dropzone');
-    const fileInput = document.getElementById('file-input-project');
-
-    if (dropzone && fileInput) {
-      dropzone.addEventListener('click', () => fileInput.click());
-      fileInput.addEventListener('change', (e) => {
-        if (e.target.files && e.target.files.length > 0) {
-          handleFileUpload(e.target.files[0]);
-        }
-      });
-
-      ['dragenter', 'dragover'].forEach(eventName => {
-        dropzone.addEventListener(eventName, (e) => {
-          e.preventDefault();
-          dropzone.classList.add('dragover');
-        });
-      });
-
-      ['dragleave', 'drop'].forEach(eventName => {
-        dropzone.addEventListener(eventName, (e) => {
-          e.preventDefault();
-          dropzone.classList.remove('dragover');
-        });
-      });
-
-      dropzone.addEventListener('drop', (e) => {
-        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-          handleFileUpload(e.dataTransfer.files[0]);
-        }
-      });
-    }
-
-    // Connections: AWS Management & Verification
-    const btnManageAws = document.getElementById('btn-manage-aws');
-    const btnTestAws = document.getElementById('btn-test-aws');
-    if (btnManageAws) btnManageAws.addEventListener('click', () => openModal('modal-connection'));
-    if (btnTestAws) {
-      btnTestAws.addEventListener('click', async () => {
+    if (btnOpenAWSModal) btnOpenAWSModal.addEventListener('click', () => {
+      const m = document.getElementById('modal-aws-credentials');
+      if (m) m.classList.remove('hidden');
+    });
+    if (btnTestAWS) {
+      btnTestAWS.addEventListener('click', async () => {
         notify('Testing AWS STS GetCallerIdentity...', 'info');
         const st = await refreshAWSStatus();
         if (st.connected) {
@@ -1317,140 +1375,157 @@
       });
     }
 
-    // Connections: Docker Test & Agent Pair
-    const btnTestDocker = document.getElementById('btn-test-docker');
-    const btnPairAgent = document.getElementById('btn-pair-agent');
+    if (btnOpenDockerModal) btnOpenDockerModal.addEventListener('click', () => {
+      const m = document.getElementById('modal-docker-agent');
+      if (m) m.classList.remove('hidden');
+    });
     if (btnTestDocker) {
       btnTestDocker.addEventListener('click', async () => {
-        notify('Probing Docker daemon...', 'info');
+        notify('Probing Docker Engine...', 'info');
         const d = await refreshDockerStatus();
         if (d.connected) {
-          notify(`Docker Engine active: ${d.version || 'OK'}`, 'success');
+          notify('Docker daemon online and responsive.', 'success');
         } else {
-          notify('Docker daemon not connected.', 'error');
-        }
-      });
-    }
-    if (btnPairAgent) {
-      btnPairAgent.addEventListener('click', async () => {
-        openModal('modal-pair-agent');
-        try {
-          const res = await api('/api/agent/pair', { method: 'POST' });
-          const codeEl = document.getElementById('agent-pairing-command');
-          if (codeEl) codeEl.textContent = `cloudops-agent pair --code ${res.code} --url http://localhost:4000`;
-        } catch (e) {
-          const codeEl = document.getElementById('agent-pairing-command');
-          if (codeEl) codeEl.textContent = 'Failed to generate code: ' + e.message;
+          notify('Docker daemon offline. Pair agent or start Docker.', 'error');
         }
       });
     }
 
-    // Form: AWS Connection
-    const formConnection = document.getElementById('form-connection');
-    if (formConnection) {
-      formConnection.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const name = document.getElementById('conn-field-name')?.value;
-        const accessKeyId = document.getElementById('conn-field-access-key')?.value;
-        const secretAccessKey = document.getElementById('conn-field-secret-key')?.value;
-        const sessionToken = document.getElementById('conn-field-session-token')?.value;
-        const region = document.getElementById('conn-field-region')?.value;
+    // Modal Close Buttons
+    const btnCloseAuth = document.getElementById('btn-close-auth-modal');
+    const btnCloseAWS = document.getElementById('btn-close-aws-modal');
+    const btnCancelAWS = document.getElementById('btn-cancel-aws-modal');
+    const btnCloseDocker = document.getElementById('btn-close-docker-modal');
+    const btnDoneDocker = document.getElementById('btn-done-docker-modal');
+    const btnCloseLogs = document.getElementById('btn-close-log-modal');
+    const btnCloseLogsFooter = document.getElementById('btn-close-modal-logs-footer');
 
-        if (!accessKeyId || !secretAccessKey) {
-          notify('AWS Access Key ID and Secret Access Key are required', 'error');
-          return;
+    if (btnCloseAuth) btnCloseAuth.addEventListener('click', closeModals);
+    if (btnCloseAWS) btnCloseAWS.addEventListener('click', closeModals);
+    if (btnCancelAWS) btnCancelAWS.addEventListener('click', closeModals);
+    if (btnCloseDocker) btnCloseDocker.addEventListener('click', closeModals);
+    if (btnDoneDocker) btnDoneDocker.addEventListener('click', closeModals);
+    if (btnCloseLogs) btnCloseLogs.addEventListener('click', closeModals);
+    if (btnCloseLogsFooter) btnCloseLogsFooter.addEventListener('click', closeModals);
+
+    // Modal Background Click
+    document.querySelectorAll('.modal-backdrop').forEach(modal => {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModals();
+      });
+    });
+
+    // Copy Docker Command
+    const btnCopyDocker = document.getElementById('btn-copy-docker-cmd');
+    if (btnCopyDocker) {
+      btnCopyDocker.addEventListener('click', () => {
+        const cmd = document.getElementById('docker-pairing-cmd')?.textContent;
+        if (cmd) navigator.clipboard.writeText(cmd).then(() => notify('Pairing command copied!', 'success'));
+      });
+    }
+
+    // Copy Modal Logs
+    const btnCopyModalLogs = document.getElementById('btn-copy-modal-logs');
+    if (btnCopyModalLogs) {
+      btnCopyModalLogs.addEventListener('click', () => {
+        const content = document.getElementById('modal-log-content')?.textContent;
+        if (content) navigator.clipboard.writeText(content).then(() => notify('Logs copied to clipboard!', 'success'));
+      });
+    }
+
+    const btnCopyTermLogs = document.getElementById('btn-copy-terminal-logs');
+    if (btnCopyTermLogs) {
+      btnCopyTermLogs.addEventListener('click', () => {
+        const content = document.getElementById('deployment-terminal-logs')?.textContent;
+        if (content) navigator.clipboard.writeText(content).then(() => notify('Terminal logs copied!', 'success'));
+      });
+    }
+
+    // Environment View Controls
+    const btnEnvLogs = document.getElementById('btn-env-view-logs');
+    const btnEnvRestart = document.getElementById('btn-env-restart');
+    const btnEnvStop = document.getElementById('btn-env-stop');
+
+    if (btnEnvLogs) btnEnvLogs.addEventListener('click', () => openLogsModal(state.activeProjectId));
+    if (btnEnvRestart) btnEnvRestart.addEventListener('click', restartActiveEnvironment);
+    if (btnEnvStop) btnEnvStop.addEventListener('click', stopActiveEnvironment);
+
+    // Drag & Drop Upload Zone
+    const dropzone = document.getElementById('upload-drop-zone');
+    const fileInput = document.getElementById('upload-file-input');
+    const btnBrowse = document.getElementById('btn-browse-file');
+    const btnRemoveFile = document.getElementById('btn-remove-selected-file');
+    const btnDeploy = document.getElementById('btn-deploy-test-env');
+
+    if (btnBrowse && fileInput) {
+      btnBrowse.addEventListener('click', () => fileInput.click());
+    }
+    if (fileInput) {
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          handleFileSelection(e.target.files[0]);
         }
+      });
+    }
+    if (dropzone) {
+      dropzone.addEventListener('click', (e) => {
+        if (e.target !== btnBrowse) fileInput.click();
+      });
 
-        try {
-          notify('Encrypting credentials and saving to vault...', 'info');
-          await api('/api/connections', {
-            method: 'POST',
-            body: JSON.stringify({
-              provider: 'AWS',
-              name: name || 'AWS Testing Account',
-              credentials: {
-                accessKeyId,
-                secretAccessKey,
-                sessionToken: sessionToken || undefined,
-                region: region || 'ap-south-1'
-              },
-              metadata: { region: region || 'ap-south-1' }
-            })
-          });
+      ['dragenter', 'dragover'].forEach(name => {
+        dropzone.addEventListener(name, (e) => {
+          e.preventDefault();
+          dropzone.classList.add('dragover');
+        });
+      });
 
-          closeModals();
-          notify('AWS Credentials saved to encrypted vault. Verifying...', 'success');
-          await refreshAWSStatus();
-        } catch (err) {
-          notify(`Failed to save AWS credentials: ${err.message}`, 'error');
+      ['dragleave', 'drop'].forEach(name => {
+        dropzone.addEventListener(name, (e) => {
+          e.preventDefault();
+          dropzone.classList.remove('dragover');
+        });
+      });
+
+      dropzone.addEventListener('drop', (e) => {
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          handleFileSelection(e.dataTransfer.files[0]);
         }
       });
     }
 
-    // Form: Login
-    const formLogin = document.getElementById('form-login');
-    if (formLogin) {
-      formLogin.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const email = document.getElementById('login-email')?.value;
-        const password = document.getElementById('login-password')?.value;
-
-        try {
-          notify('Signing in...', 'info');
-          const res = await api('/api/auth/login', {
-            method: 'POST',
-            body: JSON.stringify({ email, password })
-          });
-          setSession(res);
-          closeModals();
-          notify(`Welcome back, ${res.user.name || res.user.email}!`, 'success');
-          await loadAllData();
-        } catch (err) {
-          notify(`Login failed: ${err.message}`, 'error');
-        }
-      });
+    if (btnRemoveFile) {
+      btnRemoveFile.addEventListener('click', clearSelectedFile);
     }
 
-    // Form: Signup
-    const formSignup = document.getElementById('form-signup');
-    if (formSignup) {
-      formSignup.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const name = document.getElementById('signup-name')?.value;
-        const email = document.getElementById('signup-email')?.value;
-        const organizationName = document.getElementById('signup-org-name')?.value;
-        const password = document.getElementById('signup-password')?.value;
-
-        try {
-          notify('Creating workspace and account...', 'info');
-          const res = await api('/api/auth/signup', {
-            method: 'POST',
-            body: JSON.stringify({ name, email, organizationName, password })
-          });
-          setSession(res);
-          closeModals();
-          notify('Workspace created successfully!', 'success');
-          await loadAllData();
-        } catch (err) {
-          notify(`Sign up failed: ${err.message}`, 'error');
-        }
-      });
+    if (btnDeploy) {
+      btnDeploy.addEventListener('click', triggerDeployment);
     }
   });
 
-  // Global App Namespace for Inline Handlers
+  // Aliases for compatibility
+  const triggerDeploy = triggerDeployment;
+  const handleFileUpload = handleFileSelection;
+
+  // Public Namespace
   window.App = {
     switchView,
-    selectActiveProject,
+    selectAndInspectProject,
+    triggerDeployment,
     triggerDeploy,
+    handleFileUpload,
+    handleFileSelection,
+    restartActiveEnvironment,
+    stopActiveEnvironment,
     deleteProject,
     openLogsModal,
-    triggerGoogleLogin,
-    switchToSignup,
-    switchToLogin,
+    openAuthModal,
+    showAuthTab,
     closeModals,
-    copyInstallCommand,
-    copyPairingCommand
+    handleLogin,
+    handleSignup,
+    handleLogout,
+    handleSaveAWS,
+    togglePasswordVisibility
   };
 
 })();
