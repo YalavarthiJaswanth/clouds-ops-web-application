@@ -128,6 +128,7 @@ class AWSDeploymentService {
       projectName,
       organizationId: orgId,
       tenantId: orgId,
+      userId: options.userId || (project && project.createdByUserId) || null,
       status: 'PENDING',
       stage: 'PENDING',
       isLive: false,

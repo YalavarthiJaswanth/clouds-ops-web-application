@@ -251,6 +251,7 @@ class AWSController {
   async validateProject(req, res, next) {
     try {
       const { projectId } = req.params;
+      await awsDeploymentService.ensureDockerized(projectId, req.body || {});
       const validation = awsDeploymentService.validateProject(projectId);
       res.status(200).json({
         valid: true,
@@ -302,9 +303,11 @@ class AWSController {
     try {
       const { projectId } = req.params;
       const orgId = req.organization?.id;
+      const userId = req.user?.id;
       const options = {
         ...(req.body || {}),
-        organizationId: orgId
+        organizationId: orgId,
+        userId
       };
 
       const result = await awsDeploymentService.deploy(projectId, options);

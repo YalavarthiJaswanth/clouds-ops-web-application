@@ -70,7 +70,7 @@ class DockerClient {
     }
     try {
       const { stdout } = await execDocker(['info', '--format', '{{json .}}'], {
-        timeout: 10000,
+        timeout: 3000,
         env: { DOCKER_CLI_HINTS: 'false', DOCKER_CLI_TELEMETRY: 'false' }
       });
       let info = {};

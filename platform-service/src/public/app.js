@@ -871,9 +871,21 @@
 
     // Auto populate project name if empty
     const nameInput = document.getElementById('upload-project-name');
-    if (nameInput && !nameInput.value.trim()) {
+    if (nameInput) {
       const baseName = file.name.replace(/\.zip$/i, '').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
-      nameInput.value = baseName;
+      if (!nameInput.value.trim()) {
+        nameInput.value = baseName;
+      }
+      // If a project with this name already exists in state.projects, select it as active
+      if (state.projects && state.projects.length > 0) {
+        const existing = state.projects.find(p => p.name && p.name.toLowerCase() === baseName.toLowerCase());
+        if (existing) {
+          state.activeProjectId = existing.projectId || existing.id;
+          state.activeProject = existing;
+          localStorage.setItem('cloudops_active_project', state.activeProjectId);
+          updateProjectSelectDropdown();
+        }
+      }
     }
   }
 
@@ -962,6 +974,12 @@
     let projectId = null;
     try {
       const formData = new FormData();
+      formData.append('name', projectName);
+      formData.append('projectName', projectName);
+      formData.append('port', String(appPort));
+      if (state.activeProjectId) {
+        formData.append('projectId', state.activeProjectId);
+      }
       formData.append('project', state.selectedFile);
 
       const uploadRes = await api('/api/projects/upload', {
@@ -969,13 +987,20 @@
         body: formData
       });
 
-      projectId = uploadRes.project?.id || uploadRes.project?.projectId;
+      projectId = uploadRes.projectId || uploadRes.project?.id || uploadRes.project?.projectId || uploadRes.id;
       if (!projectId) throw new Error('Project upload failed: missing project ID in response');
 
       state.activeProjectId = projectId;
+      state.activeProject = uploadRes.project || {
+        id: projectId,
+        projectId: projectId,
+        name: projectName
+      };
       localStorage.setItem('cloudops_active_project', projectId);
+      updateProjectSelectDropdown();
+      fetchProjects().catch(() => {});
 
-      appendTerminalLog(`Application archive verified & safely extracted.`);
+      appendTerminalLog(`Application archive verified & safely extracted. Project ID: ${projectId}`);
       appendTerminalLog(`Static analysis detected: ${uploadRes.analysis?.framework?.name || 'Node.js'} (Port: ${uploadRes.analysis?.port?.value || appPort})`);
       updateStepper(1, 'completed');
 

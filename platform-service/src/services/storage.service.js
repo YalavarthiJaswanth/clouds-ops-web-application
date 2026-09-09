@@ -276,9 +276,13 @@ class StorageService {
     db.delete('projects', projectId);
   }
 
-  listProjects(organizationId = null) {
-    if (organizationId) {
-      const dbProjects = db.find('projects', { organizationId });
+  listProjects(organizationId = null, userId = null) {
+    if (organizationId || userId) {
+      const dbProjects = db.find('projects', p => {
+        if (organizationId && p.organizationId === organizationId) return true;
+        if (userId && p.createdByUserId === userId) return true;
+        return false;
+      });
       return dbProjects.map(p => {
         let record = {
           id: p.id,
