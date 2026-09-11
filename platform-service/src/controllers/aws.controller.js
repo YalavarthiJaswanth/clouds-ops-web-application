@@ -28,7 +28,7 @@ class AWSController {
         });
       } catch (err) {
         // Fallback: check if host environment/AWS CLI credentials exist and are valid with STS
-        if (err.message && err.message.includes('Provider not connected')) {
+        if (true) {
           try {
             const hostIdentity = await awsClient.getCallerIdentity();
             if (hostIdentity.connected) {

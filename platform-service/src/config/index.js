@@ -30,12 +30,13 @@ const config = {
     ttlMs: (parseInt(process.env.SESSION_TTL_DAYS, 10) || 3) * 24 * 60 * 60 * 1000
   },
   tempBaseDir: path.resolve(
-    process.cwd(),
+    __dirname,
+    '../../',
     process.env.TEMPORARY_DIR || 'temporary/projects'
   ),
   // Docker engine configurations
   docker: {
-    buildTimeoutMs: parseInt(process.env.DOCKER_BUILD_TIMEOUT_MS, 10) || 300000,
+    buildTimeoutMs: parseInt(process.env.DOCKER_BUILD_TIMEOUT_MS, 10) || 600000,
     containerMemoryLimit: process.env.CONTAINER_MEMORY_LIMIT || '512m',
     containerCpuLimit: process.env.CONTAINER_CPU_LIMIT || '1.0',
     healthCheckTimeoutMs: parseInt(process.env.HEALTH_CHECK_TIMEOUT_MS, 10) || 5000,

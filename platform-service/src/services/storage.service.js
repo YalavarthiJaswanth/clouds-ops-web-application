@@ -78,7 +78,26 @@ class StorageService {
       }
     }
 
-    // 3. Fallback to flat directory for legacy backward compatibility
+    // 3. Scan organizations directory for this project ID if organizationId is not provided
+    const orgsDir = path.join(config.tempBaseDir, 'organizations');
+    if (fs.existsSync(orgsDir)) {
+      try {
+        const orgDirs = fs.readdirSync(orgsDir);
+        for (const oId of orgDirs) {
+          const candidateProjectDir = path.join(orgsDir, oId, 'projects', projectId);
+          if (fs.existsSync(candidateProjectDir)) {
+            return {
+              projectId,
+              organizationId: oId,
+              projectDir: candidateProjectDir,
+              extractDir: path.join(candidateProjectDir, 'extracted')
+            };
+          }
+        }
+      } catch {}
+    }
+
+    // 4. Fallback to flat directory for legacy backward compatibility
     const legacyDir = path.join(config.tempBaseDir, projectId);
     const legacyExtractDir = path.join(legacyDir, 'extracted');
     if (fs.existsSync(legacyDir)) {
@@ -93,9 +112,34 @@ class StorageService {
     return null;
   }
 
-  getWorkspaceDir(projectId, organizationId = null) {
+  getExtractDir(projectId, organizationId = null) {
     const ws = this.getWorkspacePath(projectId, organizationId);
     return ws ? ws.extractDir : null;
+  }
+
+  getAppDir(projectId, organizationId = null) {
+    const ws = this.getWorkspacePath(projectId, organizationId);
+    if (!ws || !ws.extractDir) return null;
+
+    const analysis = this.getAnalysis(projectId, organizationId);
+    const appRootDir = analysis?.appRootDir || analysis?.uploadMetadata?.appRootDir;
+    if (appRootDir && appRootDir !== '.') {
+      const resolved = path.join(ws.extractDir, appRootDir);
+      if (fs.existsSync(resolved)) return resolved;
+    }
+
+    if (analysis?.effectiveProjectRoot && fs.existsSync(analysis.effectiveProjectRoot)) {
+      return analysis.effectiveProjectRoot;
+    }
+
+    // Auto-detect wrapper folder or sub-service if not explicitly set
+    const zipService = require('./zip.service');
+    const autoRoot = zipService.findEffectiveProjectRoot(ws.extractDir);
+    return autoRoot || ws.extractDir;
+  }
+
+  getWorkspaceDir(projectId, organizationId = null) {
+    return this.getAppDir(projectId, organizationId);
   }
 
   getProjectDir(projectId, organizationId = null) {

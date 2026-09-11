@@ -20,6 +20,9 @@
     authConfig: { googleClientId: '', googleEnabled: false },
     activeView: 'overview',
     selectedFile: null,
+    analyzedFile: null,
+    analyzedProjectId: null,
+    analyzedData: null,
     isDeploying: false,
     pollTimer: null
   };
@@ -846,7 +849,7 @@
   // UPLOAD & DEPLOYMENT WORKFLOW
   // ============================================================
 
-  function handleFileSelection(file) {
+  async function handleFileSelection(file) {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.zip')) {
       notify('Invalid file format. Only ZIP archives (.zip) are supported.', 'error');
@@ -871,12 +874,11 @@
 
     // Auto populate project name if empty
     const nameInput = document.getElementById('upload-project-name');
+    const baseName = file.name.replace(/\.zip$/i, '').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
     if (nameInput) {
-      const baseName = file.name.replace(/\.zip$/i, '').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
       if (!nameInput.value.trim()) {
         nameInput.value = baseName;
       }
-      // If a project with this name already exists in state.projects, select it as active
       if (state.projects && state.projects.length > 0) {
         const existing = state.projects.find(p => p.name && p.name.toLowerCase() === baseName.toLowerCase());
         if (existing) {
@@ -887,17 +889,88 @@
         }
       }
     }
+
+    // Show Analysis & Environment Summary Card
+    const summaryCard = document.getElementById('upload-analysis-summary');
+    const summaryFile = document.getElementById('upload-summary-filename');
+    const summaryDetected = document.getElementById('upload-summary-detected');
+    const summaryRoot = document.getElementById('upload-summary-root');
+    const summaryPort = document.getElementById('upload-summary-port');
+    const summaryAws = document.getElementById('upload-summary-aws');
+    const summaryDocker = document.getElementById('upload-summary-docker');
+
+    if (summaryCard) summaryCard.classList.remove('hidden');
+    if (summaryFile) summaryFile.textContent = file.name;
+    if (summaryDetected) summaryDetected.textContent = 'Analyzing application...';
+
+    // Update connection status pills in summary
+    const awsPill = document.getElementById('topbar-aws-pill');
+    const isAwsConn = awsPill && awsPill.classList.contains('pill-running');
+    if (summaryAws) {
+      summaryAws.className = 'status-pill ' + (isAwsConn ? 'pill-running' : 'pill-stopped');
+      summaryAws.textContent = isAwsConn ? 'AWS: Connected' : 'AWS: Disconnected';
+    }
+
+    const dockerPill = document.getElementById('topbar-docker-pill');
+    const isDockerConn = dockerPill && dockerPill.classList.contains('pill-running');
+    if (summaryDocker) {
+      summaryDocker.className = 'status-pill ' + (isDockerConn ? 'pill-running' : 'pill-stopped');
+      summaryDocker.textContent = isDockerConn ? 'Docker: Connected' : 'Docker: Disconnected';
+    }
+
+    // If authenticated, perform upfront upload & static analysis
+    if (state.token) {
+      try {
+        const formData = new FormData();
+        const projectName = nameInput?.value?.trim() || baseName;
+        formData.append('name', projectName);
+        formData.append('projectName', projectName);
+        formData.append('project', file);
+
+        const uploadRes = await api('/api/projects/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const pId = uploadRes.projectId || uploadRes.project?.id || uploadRes.id;
+        state.analyzedFile = file;
+        state.analyzedProjectId = pId;
+        state.analyzedData = uploadRes.analysis;
+
+        const runtimeName = uploadRes.analysis?.project?.runtime?.name || uploadRes.analysis?.project?.runtime || uploadRes.analysis?.runtime?.name || 'Node.js';
+        const fwName = uploadRes.analysis?.framework?.name || '';
+        const detectedLabel = fwName ? (runtimeName + ' (' + fwName + ')') : runtimeName;
+        const appPort = uploadRes.analysis?.port?.value || 3000;
+        const appRoot = uploadRes.analysis?.appRootDir || './';
+
+        if (summaryDetected) summaryDetected.textContent = detectedLabel;
+        if (summaryRoot) summaryRoot.textContent = appRoot.startsWith('.') ? appRoot : ('./' + appRoot);
+        if (summaryPort) summaryPort.textContent = String(appPort);
+
+        const portInput = document.getElementById('upload-app-port');
+        if (portInput) portInput.value = appPort;
+
+        notify('Application analyzed: ' + detectedLabel + ' (Port: ' + appPort + ')', 'info');
+      } catch (err) {
+        console.warn('Pre-analysis deferred to deployment:', err.message);
+        if (summaryDetected) summaryDetected.textContent = 'Analysis on Deploy';
+      }
+    }
   }
 
   function clearSelectedFile() {
     state.selectedFile = null;
+    state.analyzedFile = null;
+    state.analyzedProjectId = null;
+    state.analyzedData = null;
     const fileInput = document.getElementById('upload-file-input');
     if (fileInput) fileInput.value = '';
     const pill = document.getElementById('upload-file-pill');
     if (pill) pill.classList.add('hidden');
+    const summaryCard = document.getElementById('upload-analysis-summary');
+    if (summaryCard) summaryCard.classList.add('hidden');
   }
 
-  // Stepper State Controller
   function updateStepper(stepIndex, stateName = 'active', desc = '') {
     const steps = [1, 2, 3, 4, 5, 6];
     steps.forEach(i => {
@@ -968,8 +1041,8 @@
     }
 
     // Step 1: Upload Archive
-    updateStepper(1, 'active', 'Uploading ZIP...');
-    appendTerminalLog(`Uploading archive '${state.selectedFile.name}' (${formatBytes(state.selectedFile.size)})...`);
+    updateStepper(1, 'active', 'Analyzing App...');
+    appendTerminalLog(`[Analysis] Analyzing application archive '${state.selectedFile.name}' (${formatBytes(state.selectedFile.size)})...`);
 
     let projectId = null;
     try {
@@ -1008,14 +1081,17 @@
       updateStepper(2, 'active', 'Building Image...');
       appendTerminalLog(`Building Docker image 'cloudops/${projectName}:latest'...`);
 
-      // Validate config
+      // Validate config and build image for target EC2 architecture (linux/amd64)
+      appendTerminalLog('[Docker] Validating configuration and building image for platform linux/amd64...');
       await api(`/api/projects/${projectId}/aws/validate`, {
         method: 'POST',
         body: JSON.stringify({
           name: projectName,
-          port: appPort
+          port: appPort,
+          platform: 'linux/amd64'
         })
       });
+      appendTerminalLog('[Docker] Docker image built successfully for linux/amd64.');
 
       appendTerminalLog(`Docker build context ready. Tagged image 'cloudops/${projectName}:latest'.`);
       updateStepper(2, 'completed');
@@ -1029,7 +1105,8 @@
         method: 'POST',
         body: JSON.stringify({
           port: appPort,
-          name: projectName
+          name: projectName,
+          platform: 'linux/amd64'
         })
       });
 

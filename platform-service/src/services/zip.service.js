@@ -139,16 +139,73 @@ class ZipService {
    * resolve to that folder if package.json or source files reside there.
    */
   findEffectiveProjectRoot(baseDir) {
-    const items = fs.readdirSync(baseDir).filter((item) => !item.startsWith('.') && item !== '__MACOSX');
+    const codeFiles = [
+      'package.json', 'requirements.txt', 'pyproject.toml', 'Pipfile',
+      'pom.xml', 'build.gradle', 'build.gradle.kts', 'go.mod', 'composer.json',
+      'Gemfile', 'Dockerfile', 'docker-compose.yml', 'compose.yaml',
+      'index.html', 'index.js', 'main.py', 'app.py', 'server.js', 'app.js'
+    ];
 
-    if (items.length === 1) {
-      const candidatePath = path.join(baseDir, items[0]);
-      if (fs.statSync(candidatePath).isDirectory()) {
-        const subItems = fs.readdirSync(candidatePath);
-        // If the single subfolder contains code files, use it as the root
-        if (subItems.some((file) => ['package.json', 'requirements.txt', 'pom.xml', 'go.mod', 'Dockerfile', 'index.js', 'main.py', 'app.js'].includes(file))) {
-          return candidatePath;
-        }
+    try {
+      const rootItems = fs.readdirSync(baseDir);
+      if (rootItems.some((f) => codeFiles.includes(f))) {
+        return baseDir;
+      }
+    } catch {
+      return baseDir;
+    }
+
+    let items = [];
+    try {
+      items = fs.readdirSync(baseDir).filter((item) => !item.startsWith('.') && item !== '__MACOSX');
+    } catch {
+      return baseDir;
+    }
+
+    const dirItems = items.filter((item) => {
+      try {
+        return fs.statSync(path.join(baseDir, item)).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+
+    // Check directories containing code files
+    const dirsWithCode = dirItems.filter((dir) => {
+      try {
+        const subItems = fs.readdirSync(path.join(baseDir, dir));
+        return subItems.some((f) => codeFiles.includes(f));
+      } catch {
+        return false;
+      }
+    });
+
+    // Case 1: Exactly one directory has code files (wrapper folder or single app)
+    if (dirsWithCode.length === 1) {
+      const candidatePath = path.join(baseDir, dirsWithCode[0]);
+      return this.findEffectiveProjectRoot(candidatePath);
+    }
+
+    // Case 2: Only 1 subdirectory overall (wrapper folder containing monorepo/services)
+    if (dirItems.length === 1) {
+      const candidatePath = path.join(baseDir, dirItems[0]);
+      const deeper = this.findEffectiveProjectRoot(candidatePath);
+      if (deeper !== candidatePath) return deeper;
+      return candidatePath;
+    }
+
+    // Case 3: Monorepo with sub-services (e.g. backend / server / api preferred over client / frontend)
+    for (const pref of ['backend', 'server', 'api', 'service', 'app']) {
+      const found = dirsWithCode.find((d) => d.toLowerCase() === pref);
+      if (found) {
+        return path.join(baseDir, found);
+      }
+    }
+
+    for (const pref of ['frontend', 'client', 'ui', 'web']) {
+      const found = dirsWithCode.find((d) => d.toLowerCase() === pref);
+      if (found) {
+        return path.join(baseDir, found);
       }
     }
 

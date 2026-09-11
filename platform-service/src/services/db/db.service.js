@@ -5,7 +5,14 @@ const mongodbService = require('./mongodb.service');
 
 class DatabaseService {
   constructor(baseDirOverride) {
-    this.baseDir = baseDirOverride || process.env.DB_BASE_DIR || path.resolve(process.cwd(), 'temporary/db');
+    const defaultBase = path.resolve(__dirname, '../../../temporary/db');
+    if (baseDirOverride) {
+      this.baseDir = path.isAbsolute(baseDirOverride) ? baseDirOverride : path.resolve(defaultBase, '..', baseDirOverride);
+    } else if (process.env.DB_BASE_DIR) {
+      this.baseDir = path.isAbsolute(process.env.DB_BASE_DIR) ? process.env.DB_BASE_DIR : path.resolve(__dirname, '../../..', process.env.DB_BASE_DIR);
+    } else {
+      this.baseDir = defaultBase;
+    }
     this.collections = new Map(); // collectionName -> Map<id, record>
     this.collectionNames = [
       'users',
@@ -32,7 +39,11 @@ class DatabaseService {
   }
 
   _getCollectionFilePath(collectionName) {
-    return path.join(this.baseDir, `${collectionName}.json`);
+    const normalPath = path.join(this.baseDir, `${collectionName}.json`);
+    if (fs.existsSync(normalPath)) return normalPath;
+    const fallbackPath = path.join(this.baseDir, `${collectionName} 2.json`);
+    if (fs.existsSync(fallbackPath)) return fallbackPath;
+    return normalPath;
   }
 
   _loadAllCollections() {

@@ -346,6 +346,40 @@
               <span class="text-muted" style="font-size: 0.85rem;">Required for Docker build and EC2 port mapping</span>
             </div>
 
+            <!-- Application Analysis & Target Environment Precheck -->
+            <div id="upload-analysis-summary" class="read-only-box hidden" style="margin-top: 1rem; border-left: 3px solid var(--accent-blue); background: var(--bg-surface-alt, #0d1117); padding: 1rem; border-radius: 6px;">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; align-items: center;">
+                <div>
+                  <span class="text-muted" style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; display: block;">Application</span>
+                  <strong id="upload-summary-filename" style="color: var(--text-primary); font-size: 0.95rem;">-</strong>
+                </div>
+                <div>
+                  <span class="text-muted" style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; display: block;">Detected Type</span>
+                  <span id="upload-summary-detected" class="status-badge badge-tenant" style="font-size: 0.85rem;">Analyzing...</span>
+                </div>
+                <div>
+                  <span class="text-muted" style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; display: block;">Application Root</span>
+                  <code id="upload-summary-root" style="color: var(--accent-cyan); font-size: 0.85rem;">./</code>
+                </div>
+                <div>
+                  <span class="text-muted" style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; display: block;">Detected Port</span>
+                  <strong id="upload-summary-port" style="color: var(--accent-green); font-size: 1rem;">3000</strong>
+                </div>
+                <div>
+                  <span class="text-muted" style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; display: block;">Target Host</span>
+                  <span style="color: var(--accent-blue); font-size: 0.85rem; font-weight: 600;">AWS EC2</span>
+                </div>
+                <div>
+                  <span class="text-muted" style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; display: block;">AWS Status</span>
+                  <span id="upload-summary-aws" class="status-pill pill-running" style="font-size: 0.8rem;">AWS: Connected</span>
+                </div>
+                <div>
+                  <span class="text-muted" style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; display: block;">Docker Agent</span>
+                  <span id="upload-summary-docker" class="status-pill pill-running" style="font-size: 0.8rem;">Docker: Connected</span>
+                </div>
+              </div>
+            </div>
+
             <div class="grid-2-col" style="margin-top: 1rem;">
               <div class="form-group">
                 <label for="upload-project-name">Project Name <span class="text-danger">*</span></label>
@@ -385,7 +419,7 @@
             <div class="stepper-horizontal" id="deployment-stepper">
               <div class="step-item" id="stepper-step-1">
                 <div class="step-circle">1</div>
-                <div class="step-title">Application Upload</div>
+                <div class="step-title">Application Analysis</div>
                 <div class="step-status">Waiting</div>
               </div>
               <div class="step-item" id="stepper-step-2">

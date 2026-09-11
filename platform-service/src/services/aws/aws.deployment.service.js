@@ -88,9 +88,14 @@ class AWSDeploymentService {
       throw err;
     }
     const dockerState = project.dockerState;
-    if (!dockerState || (!dockerState.image && !dockerState.imageTag)) {
+    const targetPlatform = options.platform || (options.arch === 'arm64' ? 'linux/arm64' : 'linux/amd64');
+    const imageArch = dockerState?.image?.architecture;
+    const isTargetAmd64 = targetPlatform.includes('amd64') || targetPlatform.includes('x86_64');
+    const needsRebuild = !dockerState || (!dockerState.image && !dockerState.imageTag) || (isTargetAmd64 && imageArch && (imageArch === 'arm64' || imageArch.includes('arm')));
+
+    if (needsRebuild) {
       const dockerEngine = require('../docker');
-      const dockerResult = await dockerEngine.dockerize(projectId, { platform: options.platform });
+      const dockerResult = await dockerEngine.dockerize(projectId, { platform: targetPlatform });
       if (dockerResult.status === 'failed' || dockerResult.status === 'blocked') {
         const buildErr = new Error(`Docker image build failed: ${dockerResult.error || dockerResult.reason}`);
         buildErr.code = 'DOCKER_BUILD_FAILED';
@@ -301,8 +306,9 @@ class AWSDeploymentService {
         this._addLog(state, 'DOCKER_BUILD', `Architecture mismatch: Local image is '${currentArch}', but target EC2 instance '${instanceInfo.instanceId}' requires '${expectedDockerArch}' (${targetPlatform}). Rebuilding for target platform...`);
 
         const workspace = storageService.getWorkspacePath(projectId);
-        if (workspace && workspace.extractDir) {
-          const buildResult = await dockerClient.buildImage(workspace.extractDir, localImageTag, { platform: targetPlatform });
+        const appDir = storageService.getAppDir(projectId) || (workspace && workspace.extractDir);
+        if (appDir) {
+          const buildResult = await dockerClient.buildImage(appDir, localImageTag, { platform: targetPlatform });
           this._addLog(state, 'DOCKER_BUILD', `Successfully built '${localImageTag}' for '${targetPlatform}' (Image ID: ${buildResult.imageId?.slice(0, 19)})`);
 
           storageService.updateProject(projectId, {

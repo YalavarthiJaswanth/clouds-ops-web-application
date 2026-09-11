@@ -403,11 +403,19 @@ class ProviderConnectionService {
     }
     const conn = db.findOne('connections', { organizationId, provider: 'AWS' });
     if (!conn || !conn.secretReference) {
+      const awsClient = getAWSClient();
+      if (awsClient && awsClient.credentials) {
+        return awsClient;
+      }
       throw new Error('Provider not connected: Please connect your AWS account in Settings -> Provider Connections to continue.');
     }
 
     const decrypted = secretVault.decrypt(conn.secretReference, true);
     if (!decrypted) {
+      const awsClient = getAWSClient();
+      if (awsClient && awsClient.credentials) {
+        return awsClient;
+      }
       throw new Error('Failed to decrypt stored AWS provider credentials');
     }
 

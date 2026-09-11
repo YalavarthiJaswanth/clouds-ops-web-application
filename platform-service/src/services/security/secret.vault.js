@@ -7,7 +7,7 @@ class SecretVault {
     this.algorithm = 'aes-256-gcm';
     this.key = this._resolveMasterKey(masterKeyOverride);
     this.storage = new Map(); // secretReference -> { encryptedData, iv, tag, createdAt }
-    this._storageFilePath = path.resolve(process.cwd(), 'temporary/db/vault.json');
+    this._storageFilePath = path.resolve(__dirname, '../../../temporary/db/vault.json');
     this._loadVault();
   }
 

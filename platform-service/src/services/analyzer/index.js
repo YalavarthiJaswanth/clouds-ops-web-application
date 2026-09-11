@@ -104,7 +104,7 @@ function analyzeProject(projectDir) {
   const entryPointInfo = analyzeEntryPoint(projectDir, nodeInfo);
 
   // 5. Port detection
-  const portInfo = analyzePort(projectDir, entryPointInfo);
+  const portInfo = analyzePort(projectDir, entryPointInfo, frameworkInfo);
 
   // 6. Existing DevOps configuration detection
   const devopsInfo = analyzeDevops(projectDir);
@@ -115,7 +115,7 @@ function analyzeProject(projectDir) {
   // 8. Environment variable templates
   const envRequirements = analyzeEnvironmentRequirements(projectDir);
 
-  // Multi-runtime detection fallback if not Node.js
+  // Multi-runtime detection
   let runtime = 'Unknown';
   let language = 'Unknown';
   let isSupported = false;
@@ -131,11 +131,6 @@ function analyzeProject(projectDir) {
       language = 'TypeScript';
     }
     isSupported = true;
-  } else if (subServices.length > 0) {
-    runtime = subServices.map(s => s.runtime).join(' / ');
-    language = 'Polyglot';
-    isSupported = true;
-    frameworkInfo = { name: subServices.map(s => s.framework).join(' + '), confidence: 'high' };
   } else if (fs.existsSync(path.join(projectDir, 'requirements.txt')) || fs.existsSync(path.join(projectDir, 'Pipfile')) || fs.existsSync(path.join(projectDir, 'pyproject.toml'))) {
     runtime = 'Python';
     language = 'Python';
@@ -146,7 +141,7 @@ function analyzeProject(projectDir) {
       else if (reqs.includes('flask')) frameworkInfo = { name: 'Flask', confidence: 'high' };
       else if (reqs.includes('django')) frameworkInfo = { name: 'Django', confidence: 'high' };
     }
-  } else if (fs.existsSync(path.join(projectDir, 'pom.xml')) || fs.existsSync(path.join(projectDir, 'build.gradle'))) {
+  } else if (fs.existsSync(path.join(projectDir, 'pom.xml')) || fs.existsSync(path.join(projectDir, 'build.gradle')) || fs.existsSync(path.join(projectDir, 'build.gradle.kts'))) {
     runtime = 'Java';
     language = 'Java';
     isSupported = true;
@@ -155,11 +150,32 @@ function analyzeProject(projectDir) {
     runtime = 'Go';
     language = 'Go';
     isSupported = true;
-    frameworkInfo = { name: 'Go Standard/Gin', confidence: 'medium' };
+    frameworkInfo = { name: 'Go HTTP', confidence: 'medium' };
+  } else if (fs.existsSync(path.join(projectDir, 'composer.json')) || fs.existsSync(path.join(projectDir, 'index.php'))) {
+    runtime = 'PHP';
+    language = 'PHP';
+    isSupported = true;
+    frameworkInfo = { name: 'PHP Web', confidence: 'medium' };
+  } else if (fs.existsSync(path.join(projectDir, 'Gemfile'))) {
+    runtime = 'Ruby';
+    language = 'Ruby';
+    isSupported = true;
+    frameworkInfo = { name: 'Ruby Application', confidence: 'medium' };
+  } else if (fs.existsSync(path.join(projectDir, 'index.html')) || fs.existsSync(path.join(projectDir, 'dist/index.html')) || fs.existsSync(path.join(projectDir, 'build/index.html')) || fs.existsSync(path.join(projectDir, 'public/index.html'))) {
+    runtime = 'Static Frontend';
+    language = 'HTML/CSS/JavaScript';
+    isSupported = true;
+    frameworkInfo = { name: 'Static HTML', confidence: 'high' };
+  } else if (subServices.length > 0) {
+    runtime = subServices.map(s => s.runtime).join(' / ');
+    language = 'Polyglot';
+    isSupported = true;
+    frameworkInfo = { name: subServices.map(s => s.framework).join(' + '), confidence: 'high' };
   } else if (devopsInfo.docker.hasDockerfile) {
     runtime = 'Docker-Native';
     language = 'Dockerfile';
     isSupported = true;
+    frameworkInfo = { name: 'Custom Container', confidence: 'high' };
   }
 
   // Determine readiness status
@@ -202,11 +218,12 @@ function analyzeProject(projectDir) {
       version: frameworkInfo.version || undefined
     },
     packageManager: packageManagerInfo.packageManager || (runtime === 'Python' ? 'pip' : (runtime === 'Java' ? 'maven' : 'standard')),
-    packageManagerDetails: packageManagerInfo.conflict ? packageManagerInfo.details : undefined,
+    packageManagerDetails: packageManagerInfo,
     entryPoint: {
       value: entryPointInfo.value || (runtime === 'Python' ? 'app.py' : (runtime === 'Java' ? 'Application.java' : 'index.js')),
       confidence: entryPointInfo.confidence || 'low',
-      source: entryPointInfo.source || 'default'
+      source: entryPointInfo.source || 'default',
+      startCommand: entryPointInfo.startCommand || (runtime === 'Python' ? 'python app.py' : (nodeInfo.isNode ? 'npm start' : null))
     },
     port: {
       value: portInfo.value || 3000,
