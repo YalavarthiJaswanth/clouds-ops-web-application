@@ -470,7 +470,7 @@ Dockerfile*
     if (!content || !content.trim()) {
       return { valid: false, reason: 'Dockerfile is empty' };
     }
-    if (!/^FROM\s+\S+/im.test(content)) {
+    if (!/^\s*FROM\s+\S+/im.test(content)) {
       return { valid: false, reason: 'Dockerfile is missing a valid FROM instruction' };
     }
     return { valid: true };

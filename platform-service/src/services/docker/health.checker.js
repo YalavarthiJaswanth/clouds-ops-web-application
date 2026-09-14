@@ -62,20 +62,31 @@ class HealthChecker {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const res = await this.probe(hostPort, endpoint);
+        let res = await this.probe(hostPort, endpoint);
+        if ((!res || res.statusCode < 200 || res.statusCode >= 400) && endpoint === '/health') {
+          try {
+            const rootRes = await this.probe(hostPort, '/');
+            if (rootRes && rootRes.statusCode >= 200 && rootRes.statusCode < 400) {
+              res = rootRes;
+              endpoint = '/';
+            }
+          } catch {
+            // keep original res
+          }
+        }
         lastResponse = res;
 
-        if (res.statusCode === 200) {
+        if (res && res.statusCode >= 200 && res.statusCode < 400) {
           return {
             status: 'healthy',
-            statusCode: 200,
+            statusCode: res.statusCode,
             attempts: attempt,
             response: res.body,
             endpoint
           };
         }
 
-        lastError = new Error(`Health check returned HTTP ${res.statusCode}`);
+        lastError = new Error(`Health check returned HTTP ${res ? res.statusCode : 'unknown'}`);
       } catch (err) {
         lastError = err;
       }

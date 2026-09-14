@@ -1,3 +1,4 @@
+const path = require('path');
 const storageService = require('../services/storage.service');
 const zipService = require('../services/zip.service');
 const { analyzeProject } = require('../services/analyzer');
@@ -111,18 +112,22 @@ const uploadProject = (req, res, next) => {
     }
 
     // 4. Perform static analysis on extracted files
+    const relAppRootDir = path.relative(workspace.extractDir, extraction.effectiveProjectRoot) || '.';
     const analysisReport = analyzeProject(extraction.effectiveProjectRoot);
     const finalProjectName = explicitName || analysisReport.project?.name || existingProject?.name || originalname.replace(/\.zip$/i, '').trim();
     if (!analysisReport.project) analysisReport.project = {};
     analysisReport.project.id = projectId;
     analysisReport.project.projectId = projectId;
     analysisReport.project.name = finalProjectName;
+    analysisReport.appRootDir = relAppRootDir;
+    analysisReport.effectiveProjectRoot = extraction.effectiveProjectRoot;
     analysisReport.uploadMetadata = {
       filename: originalname,
       sizeBytes: size,
       checksum: extraction.checksum,
       fileCount: extraction.fileCount,
-      totalUncompressedBytes: extraction.totalBytes
+      totalUncompressedBytes: extraction.totalBytes,
+      appRootDir: relAppRootDir
     };
 
     // 5. Persist analysis record under tenant ownership

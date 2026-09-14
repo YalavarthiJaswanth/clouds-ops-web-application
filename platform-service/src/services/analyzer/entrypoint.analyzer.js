@@ -39,19 +39,14 @@ function analyzeEntryPoint(projectDir, nodeInfo = {}) {
 
   // 3. Check common standard entry point file locations
   const commonFiles = [
-    'src/server.js',
-    'src/index.js',
-    'src/main.js',
-    'src/app.js',
-    'server.js',
-    'index.js',
-    'main.js',
-    'app.js'
+    'src/server.js', 'src/index.js', 'src/main.js', 'src/app.js',
+    'server.js', 'index.js', 'main.js', 'app.js',
+    'app.py', 'main.py', 'server.py', 'manage.py', 'wsgi.py',
+    'main.go', 'server.go', 'app.go', 'index.html'
   ];
 
   for (const file of commonFiles) {
     if (fs.existsSync(path.join(projectDir, file))) {
-      // If not already in candidates, add it with medium confidence
       if (!candidates.some((c) => c.value === file)) {
         candidates.push({
           value: file,
@@ -62,13 +57,34 @@ function analyzeEntryPoint(projectDir, nodeInfo = {}) {
     }
   }
 
+  // Derive startCommand
+  let startCommand = null;
+  if (scripts.start) {
+    startCommand = 'npm start';
+  } else if (candidates.length > 0) {
+    const best = candidates[0].value;
+    if (best.endsWith('.js') || best.endsWith('.mjs') || best.endsWith('.cjs')) {
+      startCommand = `node ${best}`;
+    } else if (best.endsWith('.py')) {
+      if (best === 'manage.py') {
+        startCommand = 'python manage.py runserver 0.0.0.0:8000';
+      } else {
+        startCommand = `python ${best}`;
+      }
+    } else if (best.endsWith('.go')) {
+      startCommand = './main';
+    } else if (best === 'index.html') {
+      startCommand = 'nginx -g "daemon off;"';
+    }
+  }
+
   if (candidates.length > 0) {
-    // Return highest confidence candidate
     const best = candidates[0];
     return {
       value: best.value,
       confidence: best.confidence,
       source: best.source,
+      startCommand: startCommand || 'npm start',
       candidates: candidates.map((c) => c.value)
     };
   }
@@ -77,6 +93,7 @@ function analyzeEntryPoint(projectDir, nodeInfo = {}) {
     value: 'unknown',
     confidence: 'none',
     source: 'none',
+    startCommand: 'npm start',
     candidates: []
   };
 }

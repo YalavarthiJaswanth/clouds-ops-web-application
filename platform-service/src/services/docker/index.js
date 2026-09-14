@@ -49,9 +49,9 @@ class DockerEngine {
       throw err;
     }
 
-    const projectDir = workspace.extractDir;
+    const projectDir = storageService.getAppDir(projectId) || workspace.extractDir;
     const internalPort = (analysis.port && analysis.port.value && analysis.port.value !== 'unknown')
-      ? analysis.port.value
+      ? (typeof analysis.port.value === 'number' ? analysis.port.value : parseInt(analysis.port.value, 10) || 3000)
       : 3000;
 
     // 3. Prepare Dockerfile (Case A: Generate, Case B: Existing, Case C: Repair)

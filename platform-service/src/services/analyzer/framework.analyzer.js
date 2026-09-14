@@ -51,6 +51,34 @@ function analyzeFramework(nodeInfo = {}) {
     return {
       name: 'Next.js',
       version: deps['next'],
+      requiresBuild: true,
+      confidence: 'high'
+    };
+  }
+
+  if (deps['@angular/core']) {
+    return {
+      name: 'Angular',
+      version: deps['@angular/core'],
+      requiresBuild: true,
+      confidence: 'high'
+    };
+  }
+
+  if (deps['nuxt'] || deps['nuxt3']) {
+    return {
+      name: 'Nuxt',
+      version: deps['nuxt'] || deps['nuxt3'],
+      requiresBuild: true,
+      confidence: 'high'
+    };
+  }
+
+  if (deps['@remix-run/react'] || deps['@remix-run/node']) {
+    return {
+      name: 'Remix',
+      version: deps['@remix-run/react'] || deps['@remix-run/node'],
+      requiresBuild: true,
       confidence: 'high'
     };
   }
@@ -59,6 +87,7 @@ function analyzeFramework(nodeInfo = {}) {
     return {
       name: deps['vite'] ? 'React (Vite)' : 'React',
       version: deps['react'] || deps['react-dom'],
+      requiresBuild: Boolean(deps['vite'] || nodeInfo.scripts?.build),
       confidence: 'high'
     };
   }
@@ -67,6 +96,7 @@ function analyzeFramework(nodeInfo = {}) {
     return {
       name: deps['vite'] ? 'Vue (Vite)' : 'Vue.js',
       version: deps['vue'],
+      requiresBuild: Boolean(deps['vite'] || nodeInfo.scripts?.build),
       confidence: 'high'
     };
   }
@@ -75,14 +105,25 @@ function analyzeFramework(nodeInfo = {}) {
     return {
       name: 'Svelte',
       version: deps['svelte'] || deps['@sveltejs/kit'],
+      requiresBuild: true,
+      confidence: 'high'
+    };
+  }
+
+  if (deps['astro']) {
+    return {
+      name: 'Astro',
+      version: deps['astro'],
+      requiresBuild: true,
       confidence: 'high'
     };
   }
 
   return {
-    name: 'Unknown / Unsupported',
+    name: nodeInfo.isNode ? 'Node.js Application' : 'Generic Application',
     version: null,
-    confidence: 'none'
+    requiresBuild: Boolean(nodeInfo.scripts?.build),
+    confidence: nodeInfo.isNode ? 'medium' : 'none'
   };
 }
 

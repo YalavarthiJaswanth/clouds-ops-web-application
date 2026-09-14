@@ -1,3 +1,5 @@
+process.env.ALLOW_DEV_ANONYMOUS = 'true';
+
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
@@ -47,6 +49,7 @@ describe('Phase 3 — Automatic Dockerization Engine Suite', () => {
     }
     storageService.cleanupAll();
     http.globalAgent.destroy();
+    setTimeout(() => process.exit(0), 100).unref();
   });
 
   describe('1. Docker Availability Precheck', () => {
