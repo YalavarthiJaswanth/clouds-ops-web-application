@@ -4,6 +4,9 @@ const helmet = require('helmet');
 
 const app = express();
 
+// Trust reverse proxy (AWS ALB / ELB / CloudFront)
+app.set('trust proxy', true);
+
 // Security headers with relaxed CSP for local static scripts, inline handlers, and Google Identity Services
 app.use(
   helmet({

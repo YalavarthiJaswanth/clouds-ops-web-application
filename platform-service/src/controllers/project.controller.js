@@ -241,9 +241,58 @@ const deleteProject = (req, res) => {
   });
 };
 
+/**
+ * Create an empty/named project for tenant workspace
+ */
+const createProject = (req, res, next) => {
+  try {
+    const orgId = req.organization?.id || 'org-default-dev';
+    const userId = req.user?.id || 'usr-default-dev';
+    const name = (req.body?.name || req.body?.projectName || 'cloudops-demo-app').trim();
+
+    const projectId = storageService.generateProjectId();
+    const project = db.insert('projects', {
+      id: projectId,
+      projectId,
+      name,
+      organizationId: orgId,
+      createdByUserId: userId,
+      status: 'INITIALIZED',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+
+    storageService.createWorkspace(projectId, orgId);
+
+    auditService.log(projectId, 'PROJECT_CREATED', 'SUCCESS', {
+      organizationId: orgId,
+      userId,
+      name
+    });
+
+    return res.status(201).json({
+      success: true,
+      projectId,
+      id: projectId,
+      project: {
+        id: projectId,
+        projectId,
+        name,
+        status: 'INITIALIZED',
+        organizationId: orgId,
+        createdByUserId: userId
+      }
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
+  createProject,
   uploadProject,
   listTenantProjects,
   getProjectAnalysis,
   deleteProject
 };
+

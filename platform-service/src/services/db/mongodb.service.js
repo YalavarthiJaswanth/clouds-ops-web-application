@@ -43,15 +43,15 @@ class MongoDBService {
     try {
       const { MongoClient } = require('mongodb');
       this.client = new MongoClient(this.uri, {
-        serverSelectionTimeoutMS: 1000,
-        connectTimeoutMS: 1000,
-        socketTimeoutMS: 1000
+        serverSelectionTimeoutMS: 5000,
+        connectTimeoutMS: 5000,
+        socketTimeoutMS: 5000
       });
 
       const connectPromise = this.client.connect();
       let timer;
       const timeoutPromise = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('MongoDB connection timeout (1200ms exceeded)')), 1200);
+        timer = setTimeout(() => reject(new Error('MongoDB connection timeout (6000ms exceeded)')), 6000);
       });
 
       try {
@@ -95,6 +95,7 @@ class MongoDBService {
 
       const sessionsCol = this.db.collection('sessions');
       await sessionsCol.createIndex({ tokenHash: 1 }, { unique: true });
+      await sessionsCol.createIndex({ sessionId: 1 }, { sparse: true });
       await sessionsCol.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
       const orgsCol = this.db.collection('organizations');
@@ -350,6 +351,19 @@ class MongoDBService {
     if (!tokenHash || !(await this.isAvailable())) return false;
     try {
       await this.db.collection('sessions').deleteOne({ tokenHash });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async updateSession(tokenHash, updateFields) {
+    if (!tokenHash || !(await this.isAvailable())) return false;
+    try {
+      await this.db.collection('sessions').updateOne(
+        { tokenHash },
+        { $set: updateFields }
+      );
       return true;
     } catch {
       return false;

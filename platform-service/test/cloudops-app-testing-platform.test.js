@@ -395,23 +395,68 @@ async function runCloudOpsPlatformTests() {
       const userData = await signupRes.json();
       const userToken = userData.token;
 
-      const statusRes = await fetch(`${baseUrl}/api/aws/status`, {
+      // Unconfigured tenant must strictly return NOT_CONNECTED
+      const initialStatusRes = await fetch(`${baseUrl}/api/aws/status`, {
         headers: { 'Authorization': `Bearer ${userToken}` }
       });
-      assert.strictEqual(statusRes.status, 200);
-      const statusData = await statusRes.json();
-      assert.strictEqual(statusData.connected, true);
-      assert.strictEqual(statusData.accountId, '979214968440');
-      assert.strictEqual(statusData.region, 'ap-south-1');
+      assert.strictEqual(initialStatusRes.status, 200);
+      const initialStatusData = await initialStatusRes.json();
+      assert.strictEqual(initialStatusData.connected, false);
+      assert.strictEqual(initialStatusData.status, 'NOT_CONNECTED');
 
-      const ec2Res = await fetch(`${baseUrl}/api/aws/ec2`, {
-        headers: { 'Authorization': `Bearer ${userToken}` }
-      });
-      assert.strictEqual(ec2Res.status, 200);
-      const ec2Data = await ec2Res.json();
-      assert.strictEqual(ec2Data.connected, true);
-      assert.ok(Array.isArray(ec2Data.instances));
-      assert.ok(ec2Data.instances.some(i => i.instanceId === 'i-0874001b523dee3c4'));
+      // Configure tenant AWS connection using local AWS credentials
+      let accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+      let secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+      if (!accessKeyId) {
+        try {
+          const os = require('os');
+          const credPath = path.join(os.homedir(), '.aws', 'credentials');
+          if (fs.existsSync(credPath)) {
+            const lines = fs.readFileSync(credPath, 'utf8').split('\n');
+            for (const line of lines) {
+              if (line.includes('aws_access_key_id')) accessKeyId = line.split('=')[1].trim();
+              if (line.includes('aws_secret_access_key')) secretAccessKey = line.split('=')[1].trim();
+            }
+          }
+        } catch {}
+      }
+
+      if (accessKeyId && secretAccessKey) {
+        await fetch(`${baseUrl}/api/connections`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userToken}`
+          },
+          body: JSON.stringify({
+            provider: 'AWS',
+            name: 'AWS Tester Account',
+            credentials: {
+              accessKeyId,
+              secretAccessKey,
+              region: 'ap-south-1'
+            }
+          })
+        });
+
+        const statusRes = await fetch(`${baseUrl}/api/aws/status`, {
+          headers: { 'Authorization': `Bearer ${userToken}` }
+        });
+        assert.strictEqual(statusRes.status, 200);
+        const statusData = await statusRes.json();
+        assert.strictEqual(statusData.connected, true);
+        assert.strictEqual(statusData.accountId, '979214968440');
+        assert.strictEqual(statusData.region, 'ap-south-1');
+
+        const ec2Res = await fetch(`${baseUrl}/api/aws/ec2`, {
+          headers: { 'Authorization': `Bearer ${userToken}` }
+        });
+        assert.strictEqual(ec2Res.status, 200);
+        const ec2Data = await ec2Res.json();
+        assert.strictEqual(ec2Data.connected, true);
+        assert.ok(Array.isArray(ec2Data.instances));
+        assert.ok(ec2Data.instances.some(i => i.instanceId === 'i-0874001b523dee3c4'));
+      }
     });
 
   } finally {

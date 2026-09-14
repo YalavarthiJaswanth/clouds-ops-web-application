@@ -86,7 +86,7 @@ class AuthService {
   /**
    * Registers a new user, creates their primary organization, and logs them in
    */
-  async signup({ email, password, name, organizationName }) {
+  async signup({ email, password, name, organizationName, userAgent }) {
     const normalizedEmail = this.normalizeEmail(email);
     if (!normalizedEmail || !normalizedEmail.includes('@')) {
       throw new Error('Valid email address is required');
@@ -147,7 +147,7 @@ class AuthService {
     });
 
     // 4. Generate Session Token
-    const session = await this.createSession(userId, orgId);
+    const session = await this.createSession(userId, orgId, userAgent);
 
     auditService.log('system', 'USER_SIGNUP', 'SUCCESS', {
       organizationId: orgId,
@@ -159,6 +159,7 @@ class AuthService {
       user: this.sanitizeUser(user),
       organization,
       membership,
+      sessionId: session.sessionId,
       token: session.rawToken,
       expiresAt: session.expiresAt
     };
@@ -167,7 +168,7 @@ class AuthService {
   /**
    * Authenticates user with email and password
    */
-  async login({ email, password, organizationId }) {
+  async login({ email, password, organizationId, userAgent }) {
     const normalizedEmail = this.normalizeEmail(email);
     if (!normalizedEmail || !password) {
       throw new Error('Email and password are required');
@@ -245,7 +246,7 @@ class AuthService {
       targetOrgId = orgId;
     }
 
-    const session = await this.createSession(user.id, targetOrgId);
+    const session = await this.createSession(user.id, targetOrgId, userAgent);
 
     auditService.log('system', 'USER_LOGIN', 'SUCCESS', {
       organizationId: targetOrgId,
@@ -257,6 +258,7 @@ class AuthService {
       user: this.sanitizeUser(user),
       organization,
       membership,
+      sessionId: session.sessionId,
       token: session.rawToken,
       expiresAt: session.expiresAt
     };
@@ -265,7 +267,7 @@ class AuthService {
   /**
    * Authenticates user via Google OAuth2 / OpenID Connect ID token or auth code
    */
-  async authenticateWithGoogle({ idToken, code }) {
+  async authenticateWithGoogle({ idToken, code, userAgent }) {
     if (!idToken && !code) {
       throw new Error('Google authentication credential (idToken or code) is required');
     }
@@ -390,7 +392,7 @@ class AuthService {
     }
 
     // 5. Create Application Session
-    const session = await this.createSession(user.id, targetOrgId);
+    const session = await this.createSession(user.id, targetOrgId, userAgent);
 
     auditService.log('system', 'USER_GOOGLE_LOGIN', 'SUCCESS', {
       organizationId: targetOrgId,
@@ -403,6 +405,7 @@ class AuthService {
       user: this.sanitizeUser(user),
       organization,
       membership,
+      sessionId: session.sessionId,
       token: session.rawToken,
       expiresAt: session.expiresAt
     };
@@ -411,17 +414,25 @@ class AuthService {
   /**
    * Creates a cryptographically random session token for user in an organization
    */
-  async createSession(userId, organizationId) {
+  async createSession(userId, organizationId, userAgent = null) {
     const rawToken = crypto.randomBytes(32).toString('hex');
+    const sessionId = `sess-${crypto.randomUUID()}`;
     const tokenHash = this.hashToken(rawToken);
     const ttlMs = this.getSessionTtlMs();
+    const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + ttlMs).toISOString();
 
     const sessionDoc = {
+      id: sessionId,
+      sessionId,
       tokenHash,
       userId,
       organizationId,
-      expiresAt
+      createdAt: now,
+      expiresAt,
+      lastSeenAt: now,
+      userAgent: userAgent || null,
+      revokedAt: null
     };
 
     // Save in local DB
@@ -432,7 +443,7 @@ class AuthService {
       await mongodbService.createSession(sessionDoc);
     }
 
-    return { rawToken, expiresAt };
+    return { rawToken, sessionId, expiresAt };
   }
 
   /**
@@ -464,9 +475,17 @@ class AuthService {
     // Check MongoDB for session if not in local store
     if (!session && (await mongodbService.isAvailable())) {
       session = await mongodbService.findSessionByTokenHash(tokenHash);
+      if (session) {
+        db.insert('sessions', session);
+      }
     }
 
     if (!session) {
+      return null;
+    }
+
+    // Check revocation
+    if (session.revokedAt) {
       return null;
     }
 
@@ -477,6 +496,15 @@ class AuthService {
         await mongodbService.deleteSession(tokenHash);
       }
       return null;
+    }
+
+    // Update lastSeenAt timestamp
+    const nowIso = new Date().toISOString();
+    if (session.id) {
+      db.update('sessions', session.id, { lastSeenAt: nowIso });
+    }
+    if (await mongodbService.isAvailable()) {
+      await mongodbService.updateSession(tokenHash, { lastSeenAt: nowIso }).catch(() => {});
     }
 
     let user = db.findById('users', session.userId);
@@ -505,7 +533,7 @@ class AuthService {
       user: this.sanitizeUser(user),
       organization: organization || { id: session.organizationId, name: 'Default Workspace' },
       membership: membership || { role: 'MEMBER' },
-      sessionId: session.id || session.tokenHash
+      sessionId: session.sessionId || session.id || session.tokenHash
     };
   }
 
@@ -515,15 +543,18 @@ class AuthService {
   async revokeToken(rawToken) {
     if (!rawToken) return false;
     const tokenHash = this.hashToken(rawToken.trim());
+    const nowIso = new Date().toISOString();
     let revoked = false;
 
     const session = db.findOne('sessions', { tokenHash });
     if (session) {
+      db.update('sessions', session.id, { revokedAt: nowIso });
       db.delete('sessions', session.id);
       revoked = true;
     }
 
     if (await mongodbService.isAvailable()) {
+      await mongodbService.updateSession(tokenHash, { revokedAt: nowIso }).catch(() => {});
       const mRevoked = await mongodbService.deleteSession(tokenHash);
       if (mRevoked) revoked = true;
     }

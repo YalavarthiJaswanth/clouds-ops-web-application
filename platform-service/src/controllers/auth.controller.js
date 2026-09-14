@@ -6,7 +6,7 @@ function setSessionCookie(req, res, token) {
   const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
   res.cookie('session_token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production' && isHttps,
+    secure: isHttps,
     sameSite: 'lax',
     maxAge: authService.getSessionTtlMs(),
     path: '/'
@@ -28,7 +28,8 @@ class AuthController {
   async signup(req, res) {
     try {
       const { email, password, name, organizationName } = req.body;
-      const result = await authService.signup({ email, password, name, organizationName });
+      const userAgent = req.headers['user-agent'] || null;
+      const result = await authService.signup({ email, password, name, organizationName, userAgent });
 
       // Set 3-day persistent session cookie
       setSessionCookie(req, res, result.token);
@@ -50,7 +51,8 @@ class AuthController {
   async login(req, res) {
     try {
       const { email, password, organizationId } = req.body;
-      const result = await authService.login({ email, password, organizationId });
+      const userAgent = req.headers['user-agent'] || null;
+      const result = await authService.login({ email, password, organizationId, userAgent });
 
       // Set 3-day persistent session cookie
       setSessionCookie(req, res, result.token);
@@ -74,7 +76,13 @@ class AuthController {
       if (rawToken) {
         await authService.revokeToken(rawToken);
       }
-      res.clearCookie('session_token', { path: '/' });
+      const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+      res.clearCookie('session_token', {
+        path: '/',
+        httpOnly: true,
+        secure: isHttps,
+        sameSite: 'lax'
+      });
       res.status(200).json({
         success: true,
         message: 'Logged out successfully. Session revoked.'
@@ -92,6 +100,7 @@ class AuthController {
       const rawToken = extractToken(req);
       res.status(200).json({
         token: rawToken,
+        sessionId: req.sessionId,
         user: req.user,
         organization: req.organization,
         membership: req.membership
@@ -121,7 +130,8 @@ class AuthController {
         });
       }
 
-      const result = await authService.authenticateWithGoogle({ idToken: tokenToVerify, code });
+      const userAgent = req.headers['user-agent'] || null;
+      const result = await authService.authenticateWithGoogle({ idToken: tokenToVerify, code, userAgent });
 
       // Set 3-day persistent session cookie
       setSessionCookie(req, res, result.token);

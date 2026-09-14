@@ -93,7 +93,7 @@
     }
 
     const res = await fetch(endpoint, {
-      credentials: 'same-origin',
+      credentials: 'include',
       ...options,
       headers
     });
@@ -133,7 +133,13 @@
     state.user = null;
     state.organization = null;
     state.membership = null;
+    state.projects = [];
+    state.activeProjectId = null;
+    state.activeProject = null;
+    state.liveDeployment = null;
+    state.connections = [];
     localStorage.removeItem('cloudops_token');
+    localStorage.removeItem('cloudops_active_project');
     updateUI();
   }
 
@@ -209,6 +215,11 @@
       if (!state.user) openAuthModal('login');
     } else if (path === '/signup' || currentHash === '#signup') {
       if (!state.user) openAuthModal('signup');
+    } else if (path === '/dashboard' || currentHash === '#dashboard') {
+      if (!state.user) {
+        openAuthModal('login');
+        notify('Please sign in to access your dashboard.', 'info');
+      }
     }
 
     await loadAllData();
@@ -570,14 +581,29 @@
       if (appStatusEl) appStatusEl.innerHTML = `<span class="status-pill pill-running">● Running</span> on AWS EC2 <code>${dep.ec2InstanceId || 'ap-south-1'}</code>`;
 
       if (envBadge) {
-        envBadge.className = 'status-badge badge-success';
-        envBadge.textContent = 'ACTIVE TEST ENVIRONMENT';
+        const isRunning = dep.status === 'RUNNING' || dep.status === 'ACTIVE' || dep.status === 'HEALTHY';
+        const isProgress = dep.status === 'IN_PROGRESS' || dep.status === 'DEPLOYING' || dep.status === 'BUILDING';
+        const isFailed = dep.status === 'FAILED';
+
+        if (isRunning) {
+          envBadge.className = 'status-badge badge-success';
+          envBadge.textContent = 'ACTIVE';
+        } else if (isProgress) {
+          envBadge.className = 'status-badge badge-info';
+          envBadge.textContent = 'IN PROGRESS';
+        } else if (isFailed) {
+          envBadge.className = 'status-badge badge-danger';
+          envBadge.textContent = 'FAILED';
+        } else {
+          envBadge.className = 'status-badge badge-success';
+          envBadge.textContent = 'ACTIVE';
+        }
       }
 
-      const isHealthy = dep.healthCheckStatus === 'healthy';
+      const isHealthy = dep.healthCheckStatus === 'healthy' || dep.healthCheckStatus === 'HEALTHY';
       if (healthPill) {
         healthPill.className = `status-pill ${isHealthy ? 'pill-running' : 'pill-stopped'}`;
-        healthPill.textContent = isHealthy ? '● Healthy (HTTP 200 OK)' : '○ Unhealthy';
+        healthPill.textContent = isHealthy ? '● HEALTHY (HTTP 200 OK)' : '○ Unhealthy';
       }
       if (healthMeta) healthMeta.textContent = dep.healthCheckResponseTime ? `${dep.healthCheckResponseTime}ms` : '';
 
@@ -1470,9 +1496,15 @@
     const email = document.getElementById('signup-email')?.value?.trim();
     const organizationName = document.getElementById('signup-org')?.value?.trim();
     const password = document.getElementById('signup-password')?.value;
+    const confirmPassword = document.getElementById('signup-confirm-password')?.value;
 
     if (!name || !email || !password) {
       notify('Please fill in all required fields', 'error');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      notify('Passwords do not match. Please re-enter your password.', 'error');
       return;
     }
 

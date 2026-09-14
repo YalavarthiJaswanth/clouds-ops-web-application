@@ -27,24 +27,6 @@ class AWSController {
           verifiedAt: preflight.verifiedAt
         });
       } catch (err) {
-        // Fallback: check if host environment/AWS CLI credentials exist and are valid with STS
-        if (true) {
-          try {
-            const hostIdentity = await awsClient.getCallerIdentity();
-            if (hostIdentity.connected) {
-              return res.status(200).json({
-                connected: true,
-                status: 'CONNECTED',
-                accountId: hostIdentity.accountId,
-                arn: hostIdentity.arn,
-                region: hostIdentity.region,
-                source: 'HOST_ENVIRONMENT',
-                verifiedAt: new Date().toISOString()
-              });
-            }
-          } catch {}
-        }
-
         const config = require('../config');
         return res.status(200).json({
           connected: false,
@@ -75,23 +57,6 @@ class AWSController {
           ...result
         });
       } catch (err) {
-        if (err.message && err.message.includes('Provider not connected')) {
-          try {
-            const hostIdentity = await awsClient.getCallerIdentity();
-            if (hostIdentity.connected) {
-              return res.status(200).json({
-                valid: true,
-                connected: true,
-                accountId: hostIdentity.accountId,
-                arn: hostIdentity.arn,
-                region: hostIdentity.region,
-                source: 'HOST_ENVIRONMENT',
-                permissions: { ec2: true, ecr: true, ssm: true },
-                verifiedAt: new Date().toISOString()
-              });
-            }
-          } catch {}
-        }
         return res.status(400).json({
           valid: false,
           error: 'Preflight Check Failed',
@@ -117,17 +82,7 @@ class AWSController {
       try {
         activeClient = providerConnectionService.getAWSClientForOrg(orgId);
       } catch (err) {
-        try {
-          const { AWSClient } = require('../services/aws/aws.client');
-          const fallbackClient = new AWSClient({ allowEnvironmentFallback: true });
-          const identity = await fallbackClient.getCallerIdentity();
-          if (identity.connected) {
-            activeClient = fallbackClient;
-          }
-        } catch {}
-        if (!activeClient) {
-          return res.status(200).json({ connected: false, instances: [], message: err.message });
-        }
+        return res.status(200).json({ connected: false, instances: [], message: err.message });
       }
 
       try {

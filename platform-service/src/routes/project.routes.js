@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const config = require('../config');
 const {
+  createProject,
   uploadProject,
   listTenantProjects,
   getProjectAnalysis,
@@ -56,6 +57,7 @@ const awsController = require('../controllers/aws.controller');
 router.use(requireAuth);
 
 router.get('/', listTenantProjects);
+router.post('/', createProject);
 router.post('/upload', uploadLimiter, uploadMiddleware, uploadProject);
 router.get('/:projectId', requireProjectAccess, getProjectAnalysis);
 router.delete('/:projectId', requireProjectAccess, deleteProject);

@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "test": "node test/cloudops-app-testing-platform.test.js && node test/docker.test.js && node test/agent-distribution-installer.test.js",
+    "test": "node test/cloudops-app-testing-platform.test.js && node test/auth-session-e2e.test.js && node test/docker.test.js && node test/agent-distribution-installer.test.js",
     "test:legacy": "node test/run-all.js",
     "test:agent": "node test/local-agent.test.js && node test/standalone-agent-cli.test.js",
     "test:e2e": "node test/e2e-github-jenkins.js",
