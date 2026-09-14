@@ -32,9 +32,9 @@ spec:
             - name: NODE_ENV
               value: "production"
             - name: PUBLIC_BASE_URL
-              value: "http://abebc91f6a0c94e23b9714b5b202cfdf-1455164344.ap-south-1.elb.amazonaws.com:4000"
+              value: "http://a937f71a7b1cd4ce1a8918bdf881f461-160971637.ap-south-1.elb.amazonaws.com:4000"
             - name: GOOGLE_CALLBACK_URL
-              value: "http://abebc91f6a0c94e23b9714b5b202cfdf-1455164344.ap-south-1.elb.amazonaws.com:4000/api/auth/google/callback"
+              value: "http://a937f71a7b1cd4ce1a8918bdf881f461-160971637.ap-south-1.elb.amazonaws.com:4000/api/auth/google/callback"
             - name: GOOGLE_CLIENT_ID
               valueFrom:
                 secretKeyRef:
